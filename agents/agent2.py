@@ -8,6 +8,10 @@ import sys
 import os
 from pathlib import Path
 
+# 设置标准输出编码为 UTF-8，解决 Windows GBK 编码问题
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 # 将项目根目录加入 Python 搜索路径，确保能找到 tools 包
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -190,5 +194,5 @@ if __name__ == "__main__":
 
     result = crew.kickoff()
     print("\n\n" + "=" * 60)
-    print("🎯 Agent2 最终输出：")
+    print("[Agent2] Final output:")
     print(result)
