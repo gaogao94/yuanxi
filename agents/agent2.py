@@ -4,13 +4,18 @@ Agent2：数据处理干活精灵
 要求：所有工具 name 必须为英文，符合 OpenAI 函数调用协议
 """
 
+import sys
 import os
+from pathlib import Path
+
+# 将项目根目录加入 Python 搜索路径，确保能找到 tools 包
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from crewai import Agent, Task, Crew, Process
 from crewai.tools import BaseTool
 from dotenv import load_dotenv
 
 from tools.kg_query import NebulaGraphQueryTool
-
 
 # 加载环境变量（DeepSeek 密钥已配置为 OpenAI 兼容模式）
 load_dotenv()

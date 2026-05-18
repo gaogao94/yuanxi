@@ -1,33 +1,43 @@
+"""
+NebulaGraph 知识图谱查询工具（惰性连接 + 模拟降级）
+即使未安装 nebula3-python 或无法连接图数据库，也不会影响 Agent 的初始化与运行。
+"""
+
 import os
-from typing import Type, Optional
+from typing import Type, Optional, Any
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 
-# nebula3 的导入可能失败（如果你还没装），这里做一下保护
-try:
+# 只在类型检查时导入 ConnectionPool，避免运行时因缺少 nebula3 而报错
+# 真正的导入会放在 _get_pool 方法里延迟执行
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
     from nebula3.gclient.net import ConnectionPool
-    from nebula3.Config import Config
-    NEBULA_AVAILABLE = True
-except ImportError:
-    NEBULA_AVAILABLE = False
 
 class NebulaGraphQueryInput(BaseModel):
-    query: str = Field(..., description="需要执行的 nGQL 查询语句")
+    query: str = Field(..., description="需要执行的 nGQL 查询语句，例如：'SHOW TAGS'")
 
 class NebulaGraphQueryTool(BaseTool):
     name: str = "知识图谱查询"
-    description: str = "使用 nGQL 查询 NebulaGraph。如果数据库不可用，会返回模拟数据。"
+    description: str = (
+        "使用 nGQL 语句查询 NebulaGraph 图数据库，获取实体、关系等知识图谱信息。"
+        "如果数据库不可用，会自动降级为模拟结果，确保流程不中断。"
+    )
     args_schema: Type[BaseModel] = NebulaGraphQueryInput
 
-    # 类变量，用来保存单例连接池
-    _connection_pool: Optional[ConnectionPool] = None
+    # 使用字符串形式的类型注解，避免直接依赖 ConnectionPool
+    _connection_pool: Optional[Any] = None
 
     def _get_pool(self):
-        """惰性初始化连接池，只在真正查询时才创建"""
+        """惰性初始化连接池，只在真正需要查询时才创建"""
         if self._connection_pool is not None:
             return self._connection_pool
 
-        if not NEBULA_AVAILABLE:
+        # 尝试导入并连接
+        try:
+            from nebula3.gclient.net import ConnectionPool
+            from nebula3.Config import Config
+        except ImportError:
             raise Exception("nebula3-python 未安装，无法连接图数据库。")
 
         nebula_address = os.getenv('NEBULA_ADDRESS', '127.0.0.1')
@@ -56,10 +66,13 @@ class NebulaGraphQueryTool(BaseTool):
                 if result and result.is_succeeded():
                     rows = result.rows()
                     if not rows:
-                        return "查询成功，但无数据。"
-                    return f"查询成功，{len(rows)} 行：{rows}"
+                        return "查询成功，但未返回任何数据。"
+                    return f"查询成功。共 {len(rows)} 行数据。结果：{rows}"
                 else:
                     return f"查询失败：{result.error_msg() if result else '未知错误'}"
         except Exception as e:
-            # 如果连接失败或任何异常，返回模拟信息，保证流程不中断
-            return f"【模拟图谱查询】当前数据库不可用（{str(e)}），返回模拟结果：已锁定门店SH001、SH002与患者、预约关系。"
+            # 连接失败时返回模拟数据，保证整体流程不中断
+            return (
+                f"【模拟图谱查询】当前数据库不可用（{str(e)}）。"
+                "返回模拟结果：已锁定门店 SH001、SH002 与患者、预约关系，分析范围限定上海门店。"
+            )
