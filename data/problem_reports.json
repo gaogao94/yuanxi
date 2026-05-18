@@ -1,29 +1,20 @@
 [
   {
-    "id": "prob-1-20260518064927",
-    "timestamp": "2026-05-18T06:49:27.323545+00:00",
+    "id": "prob-1-20260518075242",
+    "timestamp": "2026-05-18T07:52:42.909784+00:00",
     "agent": "Agent2",
     "stage": "data_fetch",
-    "problem": "字段 clinic_name 不存在，实际字段名为 store_name",
-    "solution": "将 SQL 中的 clinic_name 替换为 store_name",
+    "problem": "字段 clinic_name 不存在",
+    "solution": "替换为 store_name",
     "severity": "low"
   },
   {
-    "id": "prob-2-20260518064927",
-    "timestamp": "2026-05-18T06:49:27.330173+00:00",
+    "id": "prob-2-20260518075242",
+    "timestamp": "2026-05-18T07:52:42.915824+00:00",
     "agent": "Agent2",
     "stage": "sql_check",
-    "problem": "SQL 语句中缺少 is_first_visit=1 过滤条件，导致数据包含复诊患者",
-    "solution": "添加 AND is_first_visit = 1 条件",
-    "severity": "medium"
-  },
-  {
-    "id": "prob-3-20260518064927",
-    "timestamp": "2026-05-18T06:49:27.336071+00:00",
-    "agent": "Agent2",
-    "stage": "data_fetch",
-    "problem": "门店 SH003 无 2026年4月数据，疑似门店已关闭",
-    "solution": "排除 SH003 门店，只查询 SH001 和 SH002",
+    "problem": "缺少 is_first_visit=1 条件",
+    "solution": "添加过滤条件",
     "severity": "medium"
   }
 ]
