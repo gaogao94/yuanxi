@@ -20,7 +20,7 @@ Agent3 失败不影响主报告正常返回。
 2. StepDecompositionEvaluator - 评估步骤拆解合理性
 3. GraphGapDetector        - 图谱缺陷诊断
 4. ProcessOptimizer        - 流程优化建议
-5. InsightRefiner          - 经验沉淀 & 维度拓展
+5. InsightRefiner          - 经验沉淀 & 可复用规则整理
 """
 
 import sys
@@ -39,7 +39,6 @@ from crewai.tools import BaseTool
 from dotenv import load_dotenv
 
 from tools.problem_collector import ProblemCollectorReader
-from tools.knowledge_store import KnowledgeStore
 
 # 加载环境变量（API 密钥等配置）
 load_dotenv()
@@ -223,89 +222,12 @@ class ProcessOptimizer(BaseTool):
 # ============================================================
 # 工具 5：知识经验库查询（新增）
 # ============================================================
-class KnowledgeBaseReader(BaseTool):
-    """
-    知识经验库查询工具。
-
-    【用途】
-    在开始复盘之前或沉淀经验之前，查询知识库中已有的经验记录。
-    支持按分类查看、按关键词搜索、按标签检索。
-    这样可以避免重复沉淀相同的经验。
-
-    【调用时机】
-    Agent3 复盘时调用，可以在沉淀新经验前先查一下是否已有相关内容。
-    """
-    name: str = "knowledge_base_reader"
-    description: str = (
-        "查询知识经验库中已有的沉淀知识。支持按分类查看（metric_definition/pitfall/"
-        "analysis_pattern/action_item）、按关键词搜索、按标签检索。"
-        "复盘前先查询已有知识，避免重复沉淀。"
-    )
-
-    def _run(self, action: str, category: str = "", keyword: str = "", tag: str = "") -> str:
-        """
-        执行知识库查询。
-
-        参数：
-            action: 操作类型（overview | search_keyword | search_tag | filter_category）
-            category: 分类筛选（metric_definition | pitfall | analysis_pattern | action_item）
-            keyword: 搜索关键词
-            tag: 搜索标签
-
-        返回：
-            查询结果的 Markdown 文本
-        """
-        KnowledgeStore.init()
-
-        if action == "overview":
-            # 返回知识库概览
-            return KnowledgeStore.format_summary()
-
-        elif action == "search_keyword" and keyword:
-            # 按关键词搜索
-            results = KnowledgeStore.search_by_keyword(keyword)
-            if not results:
-                return f"未找到包含「{keyword}」的知识记录。"
-            return self._format_results(results, f"关键词「{keyword}」搜索结果")
-
-        elif action == "search_tag" and tag:
-            # 按标签搜索
-            results = KnowledgeStore.search_by_tag(tag)
-            if not results:
-                return f"未找到标签为「{tag}」的知识记录。"
-            return self._format_results(results, f"标签「{tag}」搜索结果")
-
-        elif action == "filter_category" and category:
-            # 按分类过滤
-            results = KnowledgeStore.filter(category=category)
-            if not results:
-                return f"未找到分类为「{category}」的知识记录。"
-            return self._format_results(results, f"分类「{category}」下的记录")
-
-        else:
-            return f"未知操作: {action}。支持: overview, search_keyword, search_tag, filter_category。"
-
-    def _format_results(self, records: list, title: str) -> str:
-        """将查询结果格式化为 Markdown 文本"""
-        lines = [f"## {title}\n"]
-        for r in records:
-            lines.append(f"### {r['title']}")
-            lines.append(f"- **分类**：{r['category']}")
-            lines.append(f"- **标签**：{'、'.join(r.get('tags', []))}")
-            lines.append(f"- **来源**：{r.get('source_task', '未知')}")
-            lines.append("")
-            lines.append(r.get("content", ""))
-            lines.append("")
-            lines.append("---")
-            lines.append("")
-        return "\n".join(lines)
-
-
-# ============================================================
-# 工具 6：经验沉淀 & 可复用规则整理（改造：同时写入知识库）
 # ============================================================
 # ============================================================
 # 工具 6：经验沉淀 & 可复用规则整理（改造：同时写入知识库）
+# ============================================================
+# ============================================================
+# 工具 5：经验沉淀 & 可复用规则整理
 # ============================================================
 class InsightRefiner(BaseTool):
     """
@@ -318,102 +240,28 @@ class InsightRefiner(BaseTool):
     - 有效的分析模式（可以标准化复用的方法）
     - 下轮行动清单（哪些需要改进）
 
-    每次沉淀的经验会自动写入 knowledge_base.json 持久化存储，
-    后续任务可以直接查询已有知识，避免重复沉淀。
+    【调用时机】
+    Agent3 复盘的最后一步，汇总所有发现，输出可沉淀的知识。
     """
     name: str = "insight_refiner"
     description: str = (
-        "沉淀本次任务的可复用经验和知识，并自动存入知识库。"
-        "包括：标准指标口径定义（metric_definition）、"
-        "常见踩坑记录与规避方法（pitfall）、"
-        "有效的分析模式（analysis_pattern）、"
-        "下轮改进行动清单（action_item）。"
-        "输入任务执行总结，返回结构化的知识沉淀，同时持久化到知识库文件。"
+        "沉淀本次任务的可复用经验和知识。包括：标准指标口径定义、"
+        "常见踩坑记录与规避方法、有效的分析模式、下轮改进行动清单。"
+        "输入任务执行总结，返回结构化的知识沉淀。"
     )
 
     def _run(self, task_summary: str) -> str:
         """
-        执行经验沉淀并写入知识库。
+        执行经验沉淀。
 
         参数：
             task_summary: 本次任务执行总结
 
         返回：
-            结构化的可复用知识条目（含已保存到知识库的提示）
+            结构化的可复用知识条目
         """
-        # 确保知识库已初始化
-        KnowledgeStore.init()
-
-        # ---- 写入口径定义 ----
-        metric_record = {
-            "category": "metric_definition",
-            "title": "初诊转化率标准口径",
-            "content": (
-                "初诊转化率 = 有消费记录的首诊患者数 / 总首诊患者数 \u00d7 100%\n"
-                "- 时间粒度：月度\n"
-                "- 数据来源：dwd_patient_visit 表\n"
-                "- 过滤条件：is_first_visit = 1"
-            ),
-            "tags": ["转化率", "首诊", "口径定义"],
-            "source_task": task_summary[:100] if task_summary else "本次任务",
-            "source_agent": "Agent3",
-        }
-        saved_metric = KnowledgeStore.add(metric_record)
-
-        # ---- 写入踩坑记录 ----
-        pitfall_record = {
-            "category": "pitfall",
-            "title": "字段名不一致导致查询失败",
-            "content": (
-                "不同门店或系统之间同一概念的字段名可能不同（如 clinic_name vs store_name）。\n"
-                "- 触发条件：跨系统取数时\n"
-                "- 规避方法：建立字段映射字典，取数前先查字典\n"
-                "- 示例：本次遇到 clinic_name 不存在，实际字段为 store_name"
-            ),
-            "tags": ["字段名", "SQL", "踩坑"],
-            "source_task": task_summary[:100] if task_summary else "本次任务",
-            "source_agent": "Agent3",
-        }
-        saved_pitfall = KnowledgeStore.add(pitfall_record)
-
-        # ---- 写入分析模式 ----
-        pattern_record = {
-            "category": "analysis_pattern",
-            "title": "标准分析框架：转化率分析",
-            "content": (
-                "推荐的分析执行顺序：\n"
-                "1. 先做基础统计（总体转化率）\n"
-                "2. 维度下钻：整体 \u2192 门店 \u2192 医生 \u2192 时间\n"
-                "3. 中间结果缓存，支持快速迭代\n"
-                "4. 进阶分析前确保基础分析已完成\n"
-                "5. 交叉验证不同口径的数据一致性"
-            ),
-            "tags": ["分析框架", "转化率", "维度下钻"],
-            "source_task": task_summary[:100] if task_summary else "本次任务",
-            "source_agent": "Agent3",
-        }
-        saved_pattern = KnowledgeStore.add(pattern_record)
-
-        # ---- 写入行动项 ----
-        action_record = {
-            "category": "action_item",
-            "title": "下轮优化行动清单",
-            "content": (
-                "- 建立字段映射字典，解决命名不一致问题\n"
-                "- 创建常用 SQL 模板，减少语法错误\n"
-                "- 更新知识图谱，补充渠道实体\n"
-                "- 将 is_first_visit=1 作为首诊分析的默认过滤条件"
-            ),
-            "tags": ["优化", "行动项", "SQL模板"],
-            "source_task": task_summary[:100] if task_summary else "本次任务",
-            "source_agent": "Agent3",
-        }
-        saved_action = KnowledgeStore.add(action_record)
-
-        # ---- 返回经验报告（含已保存到知识库的提示） ----
         return (
             "## 可复用知识库条目\n\n"
-            f"> 以下经验已自动保存到知识库（知识库现有 {KnowledgeStore.count()} 条记录）\n\n"
             "### 标准指标口径定义：\n"
             "- **初诊转化率** = 有消费记录的首诊患者数 / 总首诊患者数 \u00d7 100%\n"
             "  - 时间粒度：月度\n"
@@ -429,42 +277,9 @@ class InsightRefiner(BaseTool):
             "### 下轮行动清单：\n"
             "- 建立字段映射字典，解决命名不一致问题\n"
             "- 创建常用 SQL 模板，减少语法错误\n"
-            "- 更新知识图谱，补充渠道实体\n\n"
-            "---\n"
-            "已保存到知识库的条目：\n"
-            f"- {saved_metric['id']}：初诊转化率标准口径\n"
-            f"- {saved_pitfall['id']}：字段名不一致导致查询失败\n"
-            f"- {saved_pattern['id']}：标准分析框架\n"
-            f"- {saved_action['id']}：下轮优化行动清单"
+            "- 更新知识图谱，补充渠道实体"
         )
 
-
-# ============================================================
-review_agent = Agent(
-    role="全流程复盘审计专家、业务体系优化顾问",
-    goal=(
-        "独立对需求澄清、知识获取、任务拆解、数据取数、分析输出全流程进行批判性复盘；"
-        "发现流程漏洞、口径不合理点、取数逻辑缺陷、业务知识图谱实体关系不完善之处；"
-        "给出可落地的流程优化、图谱补充、分析方向拓展建议；"
-        "沉淀单次任务经验，反哺业务体系与 Agent 能力持续进化。"
-    ),
-    backstory=(
-        "你具备全局审视思维，不负责直接业务执行，专注于事后复盘、流程审计、体系优化与长期进化；"
-        "熟悉儿牙业务全流程逻辑、指标口径规则、知识图谱设计思路、取数分析常见短板与坑点；"
-        "善于跳出单次任务视角，发现隐性逻辑问题、冗余步骤、口径歧义盲区、图谱缺失关联关系；"
-        "能够给出具体可落地的优化建议、图谱补充方向、分析维度拓展思路，并沉淀为可复用的业务经验。"
-    ),
-    verbose=True,
-    allow_delegation=False,
-    tools=[
-        ProblemCollectorReader(),     # 工具1：读取 Agent1/Agent2 上报的问题
-        StepDecompositionEvaluator(), # 工具2：评估步骤拆解合理性
-        GraphGapDetector(),           # 工具3：图谱缺陷诊断
-        ProcessOptimizer(),           # 工具4：流程优化建议
-        KnowledgeBaseReader(),        # 工具5：查询已有知识库（避免重复沉淀）
-        InsightRefiner(),             # 工具6：经验沉淀 & 写入知识库
-    ],
-)
 
 # ============================================================
 # 复盘任务
@@ -507,11 +322,9 @@ if __name__ == "__main__":
     运行命令：
         python agents/agent3.py
     """
-    # 初始化问题存储和知识库（确保 data 目录和 JSON 文件存在）
+    # 初始化问题存储（确保 data 目录和 JSON 文件存在）
     from tools.problem_store import ProblemStore
-    from tools.knowledge_store import KnowledgeStore
     ProblemStore.init()
-    KnowledgeStore.init()
 
     # 创建 Crew 并执行复盘任务
     crew = Crew(
