@@ -33,5 +33,6 @@ logs/
 .DS_Store
 Thumbs.db
 
+app/web/node_modules/
 # npm 日志
 npm-debug.log*

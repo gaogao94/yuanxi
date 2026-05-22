@@ -59,7 +59,9 @@ class ProblemCollectorReader(BaseTool):
 
     Agent3 使用此工具读取 Agent1/Agent2 上报的问题记录。
     支持获取全部记录、按条件过滤、统计数量等操作。
-    返回的结果是格式化后的 Markdown 文本，方便 Agent3 直接阅读和分析。
+    返回值默认仍是格式化后的 Markdown 文本，方便 Agent3 直接阅读和分析。
+    但随着 Agent3 逐步从“只读文字”走向“结构化复盘”，这个工具也开始透出
+    更明确的存储层状态，让上层能区分“真的没数据”和“底层存储刚做过恢复”。
     """
     name: str = "problem_collector_reader"
     description: str = (
@@ -93,8 +95,10 @@ class ProblemCollectorReader(BaseTool):
         返回：
             格式化的结果文本（Markdown 格式）
         """
-        # 确保存储已初始化
+        # 确保存储已初始化。
+        # 初始化本身是幂等的：多次调用不会重复创建脏数据，只会确保路径和文件存在。
         ProblemStore.init()
+        meta = ProblemStore.get_meta()
 
         if action == "count":
             # 统计问题数量（总数量和过滤后的数量）
@@ -104,7 +108,8 @@ class ProblemCollectorReader(BaseTool):
                 filtered = len(self._do_filter(filter_agent, filter_severity, filter_stage))
             return (
                 f"问题总数: {total}. "
-                f"当前筛选条件匹配: {filtered} 条."
+                f"当前筛选条件匹配: {filtered} 条. "
+                f"存储状态: {meta.get('storage_status', 'unknown')}."
             )
 
         elif action in ("get_all", "filter"):
@@ -115,13 +120,25 @@ class ProblemCollectorReader(BaseTool):
                 records = ProblemStore.get_all()
 
             if not records:
-                return "暂无问题记录。"
+                # 这里补充存储状态，是为了让 Agent3 在看到“暂无问题记录”时知道：
+                # 到底是本轮真的没上报，还是底层文件刚损坏并被自动恢复。
+                return (
+                    "暂无问题记录。"
+                    f"\n存储状态: {meta.get('storage_status', 'unknown')}。"
+                )
 
             # 格式化为可读的 Markdown 文本
             summary = (
                 f"共找到 {len(records)} 条问题记录:\n\n"
                 + "\n---\n".join(self._format_record(r) for r in records)
             )
+            if meta.get("storage_status") != "healthy":
+                summary += (
+                    "\n\n---\n"
+                    f"**存储状态**: {meta.get('storage_status', 'unknown')}\n"
+                    f"**最近错误**: {meta.get('last_error', '') or '无'}\n"
+                    f"**最近备份文件**: {meta.get('last_backup_path', '') or '无'}"
+                )
             return summary
 
         else:
