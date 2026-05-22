@@ -5,13 +5,14 @@ Multi-agent business analytics system: Agent1 (clarify/plan), Agent2 (execute), 
 ## Quick Start
 
 ```bash
-source venv/bin/activate          # Python 3.12.7 via pyenv
+# Backend — Python 3.13
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Run tests
+# Run all tests
 .venv/bin/python -m unittest discover -s tests
 
-# Compile-check everything
+# Compile-check all source (no linter configured; this is the verification step)
 .venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py
 
 # Agent1 local conversation (real Graph API + LLM)
@@ -20,8 +21,11 @@ printf '查看仙乐斯门店的转化率\n1\n最近一个月\n' | .venv/bin/pyt
 # Integration entrypoint (mock Agent2)
 .venv/bin/python integration.py "请分析2026年4月上海门店SH001初诊转化率"
 
-# Frontend dev server
-cd app/web && npm install && npm run dev   # http://localhost:5175/
+# Backend API server (FastAPI, port 8000)
+.venv/bin/uvicorn app.api.main:app --reload --host 0.0.0.0 --port 8000
+
+# Frontend dev server (Vite proxies /api → localhost:8000)
+cd app/web && npm install --fetch-timeout=600000 --fetch-retries=5 && npm run dev
 ```
 
 ## Architecture
@@ -30,9 +34,11 @@ cd app/web && npm install && npm run dev   # http://localhost:5175/
 - `agents/agent2.py` — Data execution via CrewAI: graph query, SQL fetch/debug, analysis, visualization, HTML report. Uses DeepSeek via OpenAI-compatible API.
 - `agents/agent3.py` — Post-hoc review: problem collection, step evaluation, graph gap detection, knowledge store. Runs as sidecar, does not block main workflow.
 - `integration.py` — Deterministic workflow orchestrator: Agent1 -> Agent2 -> Agent1 review. The `__main__` block runs with a simulated Agent2.
-- `local_agent1_test.py` — Interactive PyCharm/CLI test: real Graph API + real LLM multi-turn clarification until `task_contract` is generated.
-- `tools/` — Shared tool modules. `nebula_graph_query.py` is the single graph tool used by both Agent1 and Agent2.
-- `app/web/` — React + Vite + Tailwind + MUI frontend. Entry: `src/main.tsx`.
+- `local_agent1_test.py` — Interactive CLI test: real Graph API + real LLM multi-turn clarification until `task_contract` is generated.
+- `tools/` — Shared tool modules. `nebula_graph_query.py` is the single graph tool used by both Agent1 and Agent2. `graph_api.py` is the low-level HTTP client.
+- `app/api/main.py` — FastAPI backend API server. Endpoints: `POST /api/chat`, `GET /api/health`, `GET /api/reports/{filename}`.
+- `app/web/` — React + Vite + Tailwind + MUI frontend. Entry: `src/main.tsx`. Vite proxies `/api` to backend.
+- `app/web/src/api/chat.ts` — Frontend API client for the chat endpoint.
 
 ## Key Conventions
 
@@ -48,7 +54,7 @@ cd app/web && npm install && npm run dev   # http://localhost:5175/
 
 Configure via `.env` (git-ignored, see `.env.example`).
 
-**Important**: `.env.example` uses `GRAPH_API_URL` but the code reads `GRAPH_API_BASE_URL`. Keep both in sync; the code default is `https://graph.automed.cn`.
+**Env var naming split**: `tools/nebula_graph_query.py` reads `GRAPH_API_BASE_URL`; `tools/graph_api.py` reads `GRAPH_API_URL`. Set both or use the actual `.env` which has `GRAPH_API_BASE_URL`. Default: `https://graph.automed.cn`. The `.env.example` is outdated and only lists `GRAPH_API_URL`.
 
 | Variable | Purpose |
 |---|---|
@@ -63,12 +69,13 @@ Configure via `.env` (git-ignored, see `.env.example`).
 | `GRAPH_API_SPACE` | Fixed graph space (overrides auto) |
 | `GRAPH_API_BASE_URL` | Graph API endpoint (default `https://graph.automed.cn`) |
 | `AGENT1_TODAY` | Override "today" date for testing |
+| `API_PORT` | Backend API port (default `8000`) |
 | `DB_*` | MySQL connection for data fetch |
 
 ## Testing
 
-- Framework: `unittest`
-- All tests in `tests/test_agent1_workflow.py`
+- Framework: `unittest` — no pytest, no third-party test runner
+- Test files: `tests/test_agent1_workflow.py`, `tests/test_agent3_and_storage.py`
 - Run single test: `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.<test_method>`
 - Run all: `.venv/bin/python -m unittest discover -s tests`
 - Always verify with: `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`
@@ -89,3 +96,4 @@ When changing interfaces between agents, record the contract change explicitly. 
 - Both React and Tailwind plugins must remain in vite config
 - `assetsInclude`: `.svg`, `.csv` only — never add `.css`, `.tsx`, `.ts`
 - npm install may timeout; use `--fetch-timeout=600000 --fetch-retries=5`
+- No frontend test runner configured

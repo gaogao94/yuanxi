@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { clsx } from 'clsx';
 import type { EChartsOption } from 'echarts';
 import { EChart } from '../components/charts/EChart';
+import { sendChatMessage, type ChatResponse, type ClarificationQuestion, type ChartData } from '../../api/chat';
 
 // Configuration
 const DEFAULT_PROMPTS = [
@@ -247,6 +248,7 @@ export function Chat() {
   const [prompts] = useState<any[]>(DEFAULT_PROMPTS);
   const [inputText, setInputText] = useState('');
   const [previewPpt, setPreviewPpt] = useState<any | null>(null);
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -276,7 +278,7 @@ export function Chat() {
     ]);
   };
 
-  const handleSend = (overrideText?: string) => {
+  const handleSend = async (overrideText?: string) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim()) return;
 
@@ -286,163 +288,95 @@ export function Chat() {
       role: 'user',
       text: query,
     };
-    
+
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
-    
-    // Check for ambiguity
-    const isAmbiguous = query.length <= 6 || ['续卡', '分析', '数据', '报告', '复诊'].includes(query);
-    
-    if (isAmbiguous) {
-      const assistantId = Date.now().toString() + '-assistant';
-      setTimeout(() => {
-        setMessages(prev => [...prev, {
-          id: assistantId,
-          role: 'assistant',
-          text: `检测到您的提问“${query}”比较宽泛，语义有些模糊。您是否想分析以下具体内容？（点击即可查询）`,
-          options: [
-            `分析近期${query}下降的根本原因`,
-            `查看各门诊${query}数据对比`,
-            `生成提升${query}指标的待办SOP`
-          ]
-        }]);
-      }, 600);
-      return;
-    }
-
-    // Determine if it should be a report based on fields or prompt title
-    const wantsReport = query.includes('报告') || query.includes('PPT');
-    const clinicName = query.includes('大宁') ? '大宁店' : (query.includes('仙乐斯') ? '仙乐斯店' : '全部门诊');
 
     const assistantId = Date.now().toString() + '-assistant';
+
+    // Show analyzing state immediately
     setMessages(prev => [...prev, {
       id: assistantId,
       role: 'assistant',
       isAnalyzing: true,
       thinking: [
-        { text: '正在验证权限并连接诊所管理系统(HIS)...' }
+        { text: '正在连接分析引擎...' }
       ]
     }]);
 
-    setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === assistantId ? {
-        ...m, thinking: [...m.thinking, { text: `正在提取 ${clinicName} 的相关就诊及回访记录`, source: 'HIS - 就诊表' }]
-      } : m));
-    }, 800);
+    try {
+      const result: ChatResponse = await sendChatMessage(query, conversationId);
 
-    setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === assistantId ? {
-        ...m, thinking: [...m.thinking, { 
-          text: `数据清洗完成，发现以下核心指标异常波动：`,
-          chart: {
-            type: 'bar',
-            data: [
-              { name: '第1周', value: 85, ideal: 90 },
-              { name: '第2周', value: 82, ideal: 90 },
-              { name: '第3周', value: 68, ideal: 90 },
-              { name: '第4周', value: 71, ideal: 90 }
-            ]
-          }
-        }]
-      } : m));
-    }, 1800);
+      if (!conversationId) {
+        setConversationId(result.conversation_id);
+      }
 
-    setTimeout(() => {
+      if (result.status === 'needs_clarification') {
+        // Agent1 requires clarification
+        setMessages(prev => prev.map(m => m.id === assistantId ? {
+          ...m,
+          isAnalyzing: false,
+          text: result.text,
+          options: result.clarification_questions.map(q => {
+            if (q.options.length > 0) {
+              return q.options[0];
+            }
+            return q.question;
+          }),
+          clarificationMeta: result.clarification_questions,
+        } : m));
+      } else {
+        // Completed workflow
+        const thinkingSteps = result.thinking.map(t => ({
+          text: t.text,
+          source: t.source,
+          chart: t.chart ? { type: t.chart.type, data: t.chart.data } : undefined,
+        }));
+
+        // Map charts from result
+        const charts = result.charts.map(c => ({
+          type: c.type,
+          data: c.data,
+        }));
+
+        // Map attachments
+        const attachments = result.attachments.map(att => ({
+          id: att.id,
+          type: att.type,
+          title: att.title,
+          size: att.size,
+          icon: att.type === 'ppt' ? Presentation : CheckSquare,
+          color: att.type === 'ppt' ? 'text-orange-500' : 'text-green-500',
+          preview: att.preview,
+          url: att.url,
+        }));
+
+        setMessages(prev => prev.map(m => m.id === assistantId ? {
+          ...m,
+          isAnalyzing: false,
+          thinking: thinkingSteps.length > 0 ? thinkingSteps : [{ text: '分析完成' }],
+          text: result.text,
+          charts: charts,
+          attachments: attachments,
+        } : m));
+      }
+    } catch (err: any) {
+      // Show error in chat
       setMessages(prev => prev.map(m => m.id === assistantId ? {
-        ...m, 
+        ...m,
         isAnalyzing: false,
-        text: `我已初步拉取了 **${clinicName}** 的数据。在分析过程中，我发现指标异常主要集中在两个显著方面：\n\n一是"候诊时间超过30分钟"引发的抱怨，二是"部分高客单价项目未提供灵活分期"。\n\n为了让产出物更符合您的执行需求，您希望我优先深挖并生成哪个方向的应对策略？`,
-        options: [
-          '深挖"等待时间长"的服务体验问题', 
-          '深挖"高单价转化低"的价格敏感问题', 
-          '全面综合分析并输出'
-        ],
-        meta: { wantsReport, clinicName }
+        text: `分析过程中出现问题：${err.message || '未知错误'}。请稍后重试。`,
+        thinking: [],
       } : m));
-    }, 3000);
+    }
   };
 
   const handleOptionSelect = (msgId: string, option: string, meta: any) => {
-    // Disable options
+    // Disable options on the clarification message
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, options: undefined } : m));
 
-    // If there's no meta, it was an ambiguity clarification option
-    if (!meta) {
-      handleSend(option);
-      return;
-    }
-
-    // Add user message
-    setMessages(prev => [...prev, {
-      id: Date.now().toString(),
-      role: 'user',
-      text: option
-    }]);
-
-    const newAstId = Date.now().toString() + '-ast-2';
-    setMessages(prev => [...prev, {
-      id: newAstId,
-      role: 'assistant',
-      isAnalyzing: true,
-      thinking: [
-        { text: `正在基于您的选择：「${option}」进行深度数据下钻...` }
-      ]
-    }]);
-
-    setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === newAstId ? {
-        ...m, thinking: [...m.thinking, { text: `交叉比对行业基准库，生成结构化策略...` }]
-      } : m));
-    }, 1000);
-
-    setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === newAstId ? {
-        ...m, thinking: [...m.thinking, { 
-          text: `策略执行后的目标留存率预估模型：`,
-          chart: {
-            type: 'line',
-            data: [
-              { name: '现状', rate: 12 },
-              { name: '实施1周', rate: 9 },
-              { name: '实施2周', rate: 6 },
-              { name: '实施1月', rate: 4 }
-            ]
-          }
-        }]
-      } : m));
-    }, 2000);
-
-    setTimeout(() => {
-      // Choose attachment type based on original intent (PPT vs Todo)
-      const isReport = meta.wantsReport;
-      const attachments = isReport ? [
-        { 
-          id: `ppt-${Date.now()}`, type: 'ppt', title: `${meta.clinicName}提升执行方案.pptx`, size: '3.2 MB', icon: Presentation, color: 'text-orange-500',
-          preview: [
-            `幻灯片 1：本季度诊断结论 (${meta.clinicName})\n- 核心痛点：${option}\n- 影响占比：导致近期约 35% 的意向患者流失`,
-            `幻灯片 2：应对策略规划\n1. 针对性优化现有SOP流程\n2. 引入前台预警机制\n3. 提升咨询师应对相关抗性的话术能力`
-          ]
-        }
-      ] : [
-        { 
-          id: `todo-${Date.now()}`, type: 'todo', title: `${meta.clinicName}行动待办 (SOP)`, size: '共 4 项', icon: CheckSquare, color: 'text-green-500',
-          preview: [
-            "[ ] 每日由前台主管导出逾期未复诊名单",
-            "[ ] 建立针对该痛点的标准回讲话术",
-            "[ ] 客服专员介入，对流失高风险患者进行针对性安抚",
-            "[ ] 院长/店长每周复盘该项指标改善情况"
-          ]
-        }
-      ];
-
-      setMessages(prev => prev.map(m => m.id === newAstId ? {
-        ...m,
-        isAnalyzing: false,
-        thinking: [...m.thinking, { text: '处理完成。' }],
-        text: `已根据您的指示完成了深入分析。\n\n结合您的选择，我发现只要我们在执行层面上解决这个卡点，预计能挽回约 15%-20% 的流失率。\n\n相关的执行方案已为您生成，请查阅下方附件。`,
-        attachments
-      } : m));
-    }, 3500);
+    // Send the user's selected option as a new message to the API
+    handleSend(option);
   };
 
   const timelineItems = useMemo(() => {
