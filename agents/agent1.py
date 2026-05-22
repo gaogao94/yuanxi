@@ -535,7 +535,7 @@ class Agent1:
                 metric_options = graph_metric_options
                 metric_question = "图谱中匹配到业务关系，本次要按哪个口径继续分析？"
                 metric_type = "single_select"
-                metric_source = "knowledge_graph_query"
+                metric_source = "nebula_graph_query"
                 ambiguity_options = graph_metric_options
 
             ambiguities.append(
@@ -886,7 +886,7 @@ class Agent1:
             return {}
         if graph.get("status") == "error":
             return {
-                "source": "knowledge_graph_query",
+                "source": "nebula_graph_query",
                 "space": graph.get("space", ""),
                 "error": str(graph.get("error", "Graph API query failed.")),
                 "relationships": [],
@@ -931,7 +931,7 @@ class Agent1:
                     "from": vid_to_tag.get(src, src),
                     "relation": relation,
                     "to": vid_to_tag.get(dst, dst),
-                    "reason": "来自 knowledge_graph_query 的图谱关系。",
+                    "reason": "来自 nebula_graph_query 的图谱关系。",
                 }
             )
 
@@ -941,7 +941,7 @@ class Agent1:
                     "from": "图谱实体",
                     "relation": edge_name,
                     "to": "图谱实体",
-                    "reason": "来自 knowledge_graph_query 的图谱关系类型。",
+                    "reason": "来自 nebula_graph_query 的图谱关系类型。",
                 }
                 for edge_name in matched_edge_names
             ]
@@ -959,7 +959,7 @@ class Agent1:
         clarification_options = self._graph_clarification_options(relationships)
 
         return {
-            "source": "knowledge_graph_query",
+            "source": "nebula_graph_query",
             "space": graph.get("space", ""),
             "relationships": relationships,
             "related_entities": related_entities,
@@ -1003,13 +1003,13 @@ class Agent1:
             "status": "blocked",
             "original_question": original_question,
             "understood_intent": "Agent1 需要先查询真实图数据库才能安全澄清需求。",
-            "root_goal": "等待 knowledge_graph_query 恢复后再生成澄清问题或任务合同。",
+            "root_goal": "等待 nebula_graph_query 恢复后再生成澄清问题或任务合同。",
             "ambiguities": [
                 {
                     "field": "graph_data",
                     "issue": "真实图数据库查询失败，不能使用本地 mock 或静态规则替代。",
                     "required": True,
-                    "source": "knowledge_graph_query",
+                    "source": "nebula_graph_query",
                 }
             ],
             "clarification_questions": [],
@@ -1018,7 +1018,7 @@ class Agent1:
                 "Graph API 不可用时不下发 Agent2。",
             ],
             "blocking_reason": {
-                "source": "knowledge_graph_query",
+                "source": "nebula_graph_query",
                 "error": graph_insights["error"],
             },
             "confirmed_scope": {
@@ -1076,7 +1076,7 @@ class Agent1:
                     "field": "graph_match",
                     "issue": f"真实图谱未命中与“{metric_label or metric}”相关的实体或关系。",
                     "required": True,
-                    "source": "knowledge_graph_query",
+                    "source": "nebula_graph_query",
                 }
             ],
             "clarification_questions": [],
@@ -1085,7 +1085,7 @@ class Agent1:
                 "图谱未命中时不生成给 Agent2 的任务合同。",
             ],
             "blocking_reason": {
-                "source": "knowledge_graph_query",
+                "source": "nebula_graph_query",
                 "error": f"图谱查询成功，但未命中与“{metric_label or metric}”相关的实体或关系；当前不生成任务合同。",
             },
             "confirmed_scope": {
@@ -1205,7 +1205,7 @@ class Agent1:
             "agent2_planning_policy": {
                 "execution_steps": "agent2_decides",
                 "tool_call_order": "agent2_decides",
-                "must_use_same_graph_tool": "knowledge_graph_query",
+                "must_use_same_graph_tool": "nebula_graph_query",
                 "agent1_does_not_prescribe_steps": True,
             },
             "expected_deliverable": expected_deliverable,
@@ -1224,9 +1224,9 @@ class Agent1:
         )
         capabilities = [
             self._capability(
-                "knowledge_graph_query",
+                "nebula_graph_query",
                 True,
-                "Agent2 使用与 Agent1 相同的 knowledge_graph_query 工具，自主查询图数据库并确认实体、关系、字段位置和图谱缺口。",
+                "Agent2 使用与 Agent1 相同的 nebula_graph_query 工具，自主查询图数据库并确认实体、关系、字段位置和图谱缺口。",
                 [
                     "必须记录查询到的实体、关系和缺口。",
                     "必须遵守 graph_query_boundary。",
@@ -1347,7 +1347,7 @@ class Agent1:
         criteria = [
             "Agent2 必须自主规划执行步骤，不依赖 Agent1 固定步骤。",
             "Agent2 必须使用 task_contract.input_context 作为唯一业务范围来源。",
-            "Agent2 必须自行调用 knowledge_graph_query 确认图谱实体和关系。",
+            "Agent2 必须自行调用 nebula_graph_query 确认图谱实体和关系。",
             "Agent2 必须输出可被 Agent1 审核的结构化结果和最终报告。",
         ]
         if is_root_cause_analysis:
@@ -1677,7 +1677,7 @@ class Agent1:
 
         completed = []
         result_keys_by_capability = {
-            "knowledge_graph_query": ["knowledge_graph_result", "graph_result"],
+            "nebula_graph_query": ["knowledge_graph_result", "graph_result"],
             "data_fetch": ["data_fetch_result"],
             "sql_check": ["sql_check_result"],
             "cache_manager": ["cache_result"],
@@ -1793,13 +1793,13 @@ class Agent1:
 def build_scheduler_agent(verbose: bool = True) -> Any:
     from crewai import Agent
 
-    from tools.kg_query import KnowledgeGraphQueryTool
+    from tools.nebula_graph_query import NebulaGraphQueryTool
     from tools.problem_reporter import ProblemReporterTool
 
     return Agent(
         role="Agent1 需求澄清与任务规划专家",
         goal=(
-            "基于用户问题和 knowledge_graph_query 返回的图谱数据完成需求澄清、"
+            "基于用户问题和 nebula_graph_query 返回的图谱数据完成需求澄清、"
             "范围限定、任务合同生成，并在遇到问题时通过 problem_reporter 上报。"
         ),
         backstory=(
@@ -1808,7 +1808,7 @@ def build_scheduler_agent(verbose: bool = True) -> Any:
         ),
         verbose=verbose,
         allow_delegation=False,
-        tools=[KnowledgeGraphQueryTool(), ProblemReporterTool()],
+        tools=[NebulaGraphQueryTool(), ProblemReporterTool()],
     )
 
 
@@ -1820,7 +1820,7 @@ def build_clarification_task(original_question: str, scheduler_agent: Any | None
         description=(
             "澄清用户问题并输出结构化 Agent1 结果。\n"
             f"用户问题：{original_question}\n"
-            "如果用户输入是业务分析需求，必须先调用 knowledge_graph_query 获取图谱数据，"
+            "如果用户输入是业务分析需求，必须先调用 nebula_graph_query 获取图谱数据，"
             "再根据图谱中的实体和关系生成澄清问题；如果只是寒暄或缺少业务目标，先要求用户补充业务问题。"
             "如果发现口径歧义或工具异常，使用 problem_reporter 上报。"
         ),
@@ -1838,13 +1838,13 @@ def run_agent1_clarification(
     graph_tool: Any | None = None,
     agent1: Agent1 | None = None,
 ) -> dict[str, Any]:
-    from tools.kg_query import KnowledgeGraphQueryTool
+    from tools.nebula_graph_query import NebulaGraphQueryTool
 
     context = dict(user_context or {})
     coordinator = agent1 or Agent1()
     effective_question = str(context.get("business_question") or original_question)
     if "graph_data" not in context and coordinator.should_query_graph(original_question, context):
-        tool = graph_tool or KnowledgeGraphQueryTool()
-        context["graph_data"] = tool._run(effective_question)
+        tool = graph_tool or NebulaGraphQueryTool()
+        context["graph_data"] = tool._run(effective_question, output_format="json")
 
     return coordinator.prepare_task(original_question, context)

@@ -9,7 +9,7 @@
 │   └── agent2.py          # 干活精灵
 ├── tools/
 │   ├── __init__.py
-│   ├── kg_query.py        # NebulaGraph 工具（按需）
+│   ├── nebula_graph_query.py # NebulaGraph 图谱查询工具
 │   └── ...
 ├── integration.py         # 集成入口（重点！）
 ├── .env.example           # 配置文件

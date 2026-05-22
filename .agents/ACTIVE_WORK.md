@@ -27,15 +27,15 @@
 - 任务：只推进 Agent1 的 CrewAI 化、图谱查询接入和澄清链路验证
 - 实际修改文件：
   - `agents/agent1.py`
-  - `tools/kg_query.py`
+  - `tools/nebula_graph_query.py`
   - `integration.py`
   - `tests/test_agent1_workflow.py`
   - `docs/requirements/agent1-system-tooling-requirements.md`
   - `.agents/ACTIVE_WORK.md`
   - `.agents/CHANGELOG.md`
 - 前端影响：无
-- 后端影响：Agent1 新增 `run_agent1_clarification` 本地入口，`knowledge_graph_query` 支持 Graph API 优先、本地 JSON fallback 和 mock fallback
-- 接口影响：`knowledge_graph_query` 保持工具名不变；新增可选环境变量 `GRAPH_API_BASE_URL`、`GRAPH_API_KEY`、`GRAPH_API_SPACE`、`GRAPH_API_TIMEOUT_SECONDS`
+- 后端影响：Agent1 新增 `run_agent1_clarification` 本地入口，`nebula_graph_query` 支持 Graph API 优先、本地 JSON fallback 和 mock fallback
+- 接口影响：`nebula_graph_query` 保持工具名不变；新增可选环境变量 `GRAPH_API_BASE_URL`、`GRAPH_API_KEY`、`GRAPH_API_SPACE`、`GRAPH_API_TIMEOUT_SECONDS`
 - 数据库影响：无写入；只读调用 Graph API 或读取本地 JSON
 - 配置影响：正式 Graph API 需要通过环境变量提供 Bearer API Key，不硬编码密钥
 - 验证命令：
@@ -43,7 +43,7 @@
   - `.venv/bin/python -m compileall agents tools integration.py tests`
   - `GRAPH_API_KEY= MEDGRAPH_JSON_PATH=/Users/ameng/Downloads/medgraph_backup.json .venv/bin/python - <<'PY' ...`
   - `git diff --check`
-- 验证结果：12 个单测通过；compileall 通过；本地 medgraph JSON 示例返回 `needs_clarification` 且澄清来源为 `knowledge_graph_query`；diff 空白检查通过
+- 验证结果：12 个单测通过；compileall 通过；本地 medgraph JSON 示例返回 `needs_clarification` 且澄清来源为 `nebula_graph_query`；diff 空白检查通过
 - 未验证项：未调用真实 `https://graph.automed.cn`；本地未提供正式 `GRAPH_API_KEY`
 - 风险或假设：
   - 假设正式 Graph API 成功时可返回完整图谱结构，或至少返回可包装为 `schema`/`data` 的 JSON
@@ -55,20 +55,20 @@
 - 任务：Agent1 切换为真实 Graph API 严格模式，不使用本地 mock 或本地 JSON fallback
 - 实际修改文件：
   - `agents/agent1.py`
-  - `tools/kg_query.py`
+  - `tools/nebula_graph_query.py`
   - `tests/test_agent1_workflow.py`
   - `docs/requirements/agent1-system-tooling-requirements.md`
   - `.agents/ACTIVE_WORK.md`
   - `.agents/CHANGELOG.md`
 - 前端影响：无
 - 后端影响：Agent1 在严格真实 API 模式下不再使用本地 JSON/mock fallback；真实 API 失败时返回 `blocked`
-- 接口影响：新增 `GRAPH_API_STRICT=1` 配置；启用后 `knowledge_graph_query` 失败返回 `status=error`、`source=graph_api`、空 `data.vertices/edges`
+- 接口影响：新增 `GRAPH_API_STRICT=1` 配置；启用后 `nebula_graph_query` 失败返回 `status=error`、`source=graph_api`、空 `data.vertices/edges`
 - 数据库影响：无写入；只读调用 `https://graph.automed.cn`
-- 配置影响：需要 `GRAPH_API_KEY`；已按用户要求写入本地 `.env`，`.env` 被 git 忽略；`knowledge_graph_query` 会加载 `.env`；未记录密钥明文
+- 配置影响：需要 `GRAPH_API_KEY`；已按用户要求写入本地 `.env`，`.env` 被 git 忽略；`nebula_graph_query` 会加载 `.env`；未记录密钥明文
 - 验证命令：
   - `.venv/bin/python -m unittest discover -s tests`
   - `.venv/bin/python -m compileall agents tools integration.py tests`
-  - `.venv/bin/python -m compileall tools/kg_query.py`
+  - `.venv/bin/python -m compileall tools/nebula_graph_query.py`
   - `git diff --check`
   - 真实 Graph API 严格模式联调：`GRAPH_API_STRICT=1`、不设置 `MEDGRAPH_JSON_PATH`
 - 验证结果：15 个单测通过；compileall 通过；diff 空白检查通过；`.env` 已脱敏确认包含 Graph API 配置且被 git 忽略；按 Apipost 配置修正后，真实 API 严格联调成功，返回 `medgraph` 的 27 个 tag、30 个 edge type，并取到 `patient --转化--> member` 边；Agent1 返回 `needs_clarification`
@@ -154,7 +154,7 @@
 - 状态：已完成
 - 任务：避免严格真实 API 模式下默认查询固定 graph space 导致漏取其他库数据
 - 实际修改文件：
-  - `tools/kg_query.py`
+  - `tools/nebula_graph_query.py`
   - `local_agent1_test.py`
   - `tests/test_agent1_workflow.py`
   - `docs/requirements/agent1-system-tooling-requirements.md`
@@ -166,9 +166,9 @@
 - 数据库影响：无写入；只读查询目标 graph space
 - 配置影响：`GRAPH_API_STRICT=1` 时要求 `GRAPH_API_SPACE`
 - 验证命令：
-  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_knowledge_graph_query_strict_mode_requires_explicit_graph_space`
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_nebula_graph_query_strict_mode_requires_explicit_graph_space`
   - `.venv/bin/python -m unittest discover -s tests`
-  - `.venv/bin/python -m compileall tools/kg_query.py local_agent1_test.py`
+  - `.venv/bin/python -m compileall tools/nebula_graph_query.py local_agent1_test.py`
   - `printf '帮我看看最近门店转化怎么样\nmedgraph\n1\n2\n2\n' | .venv/bin/python local_agent1_test.py`
   - `git diff --check`
 - 验证结果：新增测试先复现严格模式会查询默认 space 的问题；修复后通过；全量 18 个测试通过；编译通过；本地真实 API 流程要求显式输入 `medgraph` 后可输出 `ready` 和中文 `task_contract`
@@ -183,21 +183,21 @@
 - 状态：已完成
 - 任务：将 graph space 从人工输入改为 Agent1 自动选择
 - 实际修改文件：
-  - `tools/kg_query.py`
+  - `tools/nebula_graph_query.py`
   - `local_agent1_test.py`
   - `tests/test_agent1_workflow.py`
   - `docs/requirements/agent1-system-tooling-requirements.md`
   - `.agents/ACTIVE_WORK.md`
   - `.agents/CHANGELOG.md`
 - 前端影响：无
-- 后端影响：`knowledge_graph_query` 在未指定 space 或启用自动选择时会调用 `/spaces` 并按 schema/edge 命中度选择目标 space；本地脚本默认自动选库
+- 后端影响：`nebula_graph_query` 在未指定 space 或启用自动选择时会调用 `/spaces` 并按 schema/edge 命中度选择目标 space；本地脚本默认自动选库
 - 接口影响：无新增接口；新增使用既有 `GET /spaces`
 - 数据库影响：无写入；会只读探测多个 graph space 的 schema
 - 配置影响：新增 `GRAPH_API_AUTO_SPACE`；本地脚本默认设置为 `1`；显式 `GRAPH_API_SPACE` 仍可作为生产固定配置
 - 验证命令：
-  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_knowledge_graph_query_strict_mode_auto_selects_graph_space`
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_nebula_graph_query_strict_mode_auto_selects_graph_space`
   - `.venv/bin/python -m unittest discover -s tests`
-  - `.venv/bin/python -m compileall tools/kg_query.py local_agent1_test.py`
+  - `.venv/bin/python -m compileall tools/nebula_graph_query.py local_agent1_test.py`
   - `printf '帮我看看最近门店转化怎么样\n1\n2\n2\n' | .venv/bin/python local_agent1_test.py`
   - `git diff --check`
 - 验证结果：新增测试先复现缺失自动选库；修复后通过；全量 18 个测试通过；编译通过；真实 API 本地流程不再要求输入 graph space，自动选择 `medgraph`，并输出 `ready` 和中文 `task_contract`
@@ -499,12 +499,12 @@
   - `integration.py`
   - `local_agent1_test.py`
   - `tests/test_agent1_workflow.py`
-  - `tools/kg_query.py`
+  - `tools/nebula_graph_query.py`
   - `docs/requirements/agent1-system-tooling-requirements.md`
   - `.agents/ACTIVE_WORK.md`
   - `.agents/CHANGELOG.md`
 - 前端影响：无
-- 后端影响：`task_contract` 不再包含固定执行步骤；Agent1 只输出澄清任务、输入范围、图谱边界、必需能力、验收标准、安全约束和交付要求；Agent1 审核改为检查 `completed_capabilities`；拉取远端最新代码后保留 Agent2 的 `tools/nebula_graph_query.py`，并恢复 Agent1 使用的 `tools/kg_query.py`
+- 后端影响：`task_contract` 不再包含固定执行步骤；Agent1 只输出澄清任务、输入范围、图谱边界、必需能力、验收标准、安全约束和交付要求；Agent1 审核改为检查 `completed_capabilities`；后续已在 2026-05-22 将 Agent1 图谱查询统一到 Agent2 的 `tools/nebula_graph_query.py`
 - 接口影响：删除 `task_contract.todos`；新增或强化 `clarified_task`、`graph_query_boundary`、`graph_entity_hints`、`graph_relationship_hints`、`required_capabilities`、`acceptance_criteria`、`safety_constraints`、`agent2_planning_policy`、`expected_deliverable`
 - 数据库影响：无
 - 配置影响：无
@@ -517,3 +517,34 @@
 - 验证结果：新增缓存不能替代取数的审核测试通过；48 个测试通过；编译通过；真实 DeepSeek + Graph API 本地流程输出能力合同，不含 `todos`，包含 `root_cause_analysis` 和 `agent2_planning_policy.execution_steps=agent2_decides`；空白检查通过
 - 未验证项：未在 PyCharm UI 内点击运行；命令行已验证同一脚本
 - 风险或假设：Agent2 必须按 `required_capabilities` 自主规划执行并回填 `completed_capabilities` 或等价结果字段；Agent1 不再向 Agent2 提供固定步骤兜底
+
+## [2026-05-22 09:21] Agent: codex-gpt5
+
+- 状态：已完成
+- 任务：让 Agent1 直接复用 Agent2 的图谱查询工具，不再保留单独的 `tools/kg_query.py`
+- 实际修改文件：
+  - `tools/nebula_graph_query.py`
+  - `tools/kg_query.py`
+  - `agents/agent1.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `README.md`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `docs/requirements/agent1-workflow-requirements.md`
+  - `docs/tasks/agent3-onboarding-tasks.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 前端影响：无
+- 后端影响：Agent1 改为直接导入 `tools.nebula_graph_query.NebulaGraphQueryTool`；`NebulaGraphQueryTool` 增加 `output_format=json` 结构化输出，默认仍返回文本摘要给 Agent2 使用；删除 `tools/kg_query.py`
+- 接口影响：`task_contract.required_capabilities` 和 `agent2_planning_policy.must_use_same_graph_tool` 使用 `nebula_graph_query`
+- 数据库影响：无写入，仍只读查询图数据库
+- 配置影响：无
+- 验证命令：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_nebula_graph_query_reads_medgraph_json_from_env tests.test_agent1_workflow.Agent1WorkflowTest.test_nebula_graph_query_defaults_to_text_for_agent2 tests.test_agent1_workflow.Agent1WorkflowTest.test_build_scheduler_agent_uses_only_graph_and_problem_tools tests.test_agent1_workflow.Agent1WorkflowTest.test_run_agent1_clarification_queries_graph_tool_before_planning`
+  - `.venv/bin/python -m unittest discover -s tests`
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`
+  - `git diff --check`
+- 验证结果：专项图谱工具复用测试通过；49 个测试通过；编译通过；真实 DeepSeek + Graph API 本地流程输出 `nebula_graph_query` 能力合同；空白检查通过
+- 未验证项：未在 PyCharm UI 内点击运行；命令行已验证同一脚本
+- 风险或假设：Agent2 默认文本输出保持可读摘要；Agent1 必须传 `output_format=json` 才能获得结构化图谱数据

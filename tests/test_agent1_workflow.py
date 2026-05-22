@@ -18,7 +18,7 @@ from local_agent1_test import (
     _normalize_time_range_answer,
     _run_conversation,
 )
-from tools.kg_query import KnowledgeGraphQueryTool
+from tools.nebula_graph_query import NebulaGraphQueryTool
 
 
 def sample_medgraph() -> dict:
@@ -227,7 +227,7 @@ class Agent1WorkflowTest(unittest.TestCase):
             for capability in result["task_contract"]["required_capabilities"]
             if capability["required"]
         }
-        self.assertIn("knowledge_graph_query", capability_names)
+        self.assertIn("nebula_graph_query", capability_names)
         self.assertIn("data_fetch", capability_names)
         self.assertIn("sql_check", capability_names)
         self.assertIn("metric_analysis", capability_names)
@@ -239,7 +239,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         )
         self.assertEqual(
             result["task_contract"]["agent2_planning_policy"]["must_use_same_graph_tool"],
-            "knowledge_graph_query",
+            "nebula_graph_query",
         )
 
     def test_task_contract_uses_capabilities_instead_of_fixed_todos(self):
@@ -255,7 +255,7 @@ class Agent1WorkflowTest(unittest.TestCase):
 
         capabilities = task_contract["required_capabilities"]
         graph_capability = next(
-            capability for capability in capabilities if capability["name"] == "knowledge_graph_query"
+            capability for capability in capabilities if capability["name"] == "nebula_graph_query"
         )
         data_capability = next(
             capability for capability in capabilities if capability["name"] == "data_fetch"
@@ -347,7 +347,7 @@ class Agent1WorkflowTest(unittest.TestCase):
             for question in result["clarification_result"]["clarification_questions"]
             if question["id"] == "metric_definition"
         )
-        self.assertEqual(metric_question["source"], "knowledge_graph_query")
+        self.assertEqual(metric_question["source"], "nebula_graph_query")
         self.assertIn("续卡数量：统计会员到续卡记录的续卡记录数", metric_question["options"])
         self.assertIn("续卡路径：分析会员到续卡记录的续卡链路", metric_question["options"])
         self.assertNotIn("初诊转化率", metric_question["options"])
@@ -789,7 +789,7 @@ class Agent1WorkflowTest(unittest.TestCase):
                 "转化路径：患者到会员的转化链路",
                 "转化关联对象：患者、会员、初诊医生、责任医生之间的关系",
             ],
-            "source": "knowledge_graph_query",
+            "source": "nebula_graph_query",
         }
 
         output = StringIO()
@@ -825,7 +825,7 @@ class Agent1WorkflowTest(unittest.TestCase):
             "business_question",
         )
 
-    def test_knowledge_graph_query_reads_medgraph_json_from_env(self):
+    def test_nebula_graph_query_reads_medgraph_json_from_env(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as file:
             json.dump(sample_medgraph(), file, ensure_ascii=False)
             medgraph_path = file.name
@@ -839,11 +839,11 @@ class Agent1WorkflowTest(unittest.TestCase):
                     "GRAPH_API_STRICT": "",
                 },
             ):
-                tool = KnowledgeGraphQueryTool()
+                tool = NebulaGraphQueryTool()
 
-                result = json.loads(tool._run("转化率"))
+                result = json.loads(tool._run("转化率", output_format="json"))
 
-            self.assertEqual(tool.name, "knowledge_graph_query")
+            self.assertEqual(tool.name, "nebula_graph_query")
             self.assertEqual(result["space"], "medgraph")
             self.assertIn(
                 {"src": "patient", "edge": "转化", "dst": "member"},
@@ -852,7 +852,28 @@ class Agent1WorkflowTest(unittest.TestCase):
         finally:
             os.unlink(medgraph_path)
 
-    def test_knowledge_graph_query_uses_graph_api_before_local_json(self):
+    def test_nebula_graph_query_defaults_to_text_for_agent2(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as file:
+            json.dump(sample_medgraph(), file, ensure_ascii=False)
+            medgraph_path = file.name
+
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "MEDGRAPH_JSON_PATH": medgraph_path,
+                    "GRAPH_API_KEY": "",
+                    "GRAPH_API_STRICT": "",
+                },
+            ):
+                result = NebulaGraphQueryTool()._run("转化率")
+
+            self.assertIn("NebulaGraph 查询结果", result)
+            self.assertIn("转化", result)
+        finally:
+            os.unlink(medgraph_path)
+
+    def test_nebula_graph_query_uses_graph_api_before_local_json(self):
         captured_requests = []
 
         class FakeResponse:
@@ -886,7 +907,7 @@ class Agent1WorkflowTest(unittest.TestCase):
                     "MEDGRAPH_JSON_PATH": medgraph_path,
                 },
             ), patch("urllib.request.urlopen", fake_urlopen):
-                result = json.loads(KnowledgeGraphQueryTool()._run("转化率"))
+                result = json.loads(NebulaGraphQueryTool()._run("转化率", output_format="json"))
 
             request, timeout = captured_requests[0]
             self.assertEqual(result["space"], "medgraph")
@@ -901,7 +922,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         finally:
             os.unlink(medgraph_path)
 
-    def test_knowledge_graph_query_falls_back_to_local_json_when_api_raw_error(self):
+    def test_nebula_graph_query_falls_back_to_local_json_when_api_raw_error(self):
         class FakeResponse:
             status = 200
 
@@ -936,7 +957,7 @@ class Agent1WorkflowTest(unittest.TestCase):
                     "MEDGRAPH_JSON_PATH": medgraph_path,
                 },
             ), patch("urllib.request.urlopen", return_value=FakeResponse()):
-                result = json.loads(KnowledgeGraphQueryTool()._run("SHOW TAGS"))
+                result = json.loads(NebulaGraphQueryTool()._run("SHOW TAGS", output_format="json"))
 
             self.assertEqual(result["space"], "medgraph")
             self.assertIn(
@@ -946,7 +967,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         finally:
             os.unlink(medgraph_path)
 
-    def test_knowledge_graph_query_strict_mode_returns_api_error_without_fallback(self):
+    def test_nebula_graph_query_strict_mode_returns_api_error_without_fallback(self):
         class FakeResponse:
             status = 200
 
@@ -981,7 +1002,7 @@ class Agent1WorkflowTest(unittest.TestCase):
                     "MEDGRAPH_JSON_PATH": medgraph_path,
                 },
             ), patch("urllib.request.urlopen", return_value=FakeResponse()):
-                result = json.loads(KnowledgeGraphQueryTool()._run("SHOW TAGS"))
+                result = json.loads(NebulaGraphQueryTool()._run("SHOW TAGS", output_format="json"))
 
             self.assertEqual(result["status"], "error")
             self.assertEqual(result["source"], "graph_api")
@@ -990,15 +1011,15 @@ class Agent1WorkflowTest(unittest.TestCase):
         finally:
             os.unlink(medgraph_path)
 
-    def test_knowledge_graph_query_strict_mode_requires_api_key(self):
+    def test_nebula_graph_query_strict_mode_requires_api_key(self):
         with patch.dict(os.environ, {"GRAPH_API_KEY": "", "GRAPH_API_STRICT": "1"}):
-            result = json.loads(KnowledgeGraphQueryTool()._run("转化率"))
+            result = json.loads(NebulaGraphQueryTool()._run("转化率", output_format="json"))
 
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["source"], "graph_api")
         self.assertIn("GRAPH_API_KEY", result["error"])
 
-    def test_knowledge_graph_query_strict_mode_auto_selects_graph_space(self):
+    def test_nebula_graph_query_strict_mode_auto_selects_graph_space(self):
         captured_urls = []
 
         class FakeResponse:
@@ -1049,7 +1070,7 @@ class Agent1WorkflowTest(unittest.TestCase):
                 "NEBULA_SPACE": "",
             },
         ), patch("urllib.request.urlopen", fake_urlopen):
-            result = json.loads(KnowledgeGraphQueryTool()._run("帮我看续卡情况"))
+            result = json.loads(NebulaGraphQueryTool()._run("帮我看续卡情况", output_format="json"))
 
         self.assertEqual(result["space"], "card_renew_knowledge")
         self.assertEqual(result["source"], "graph_api")
@@ -1071,10 +1092,10 @@ class Agent1WorkflowTest(unittest.TestCase):
             for question in result["clarification_result"]["clarification_questions"]
             if question["id"] == "metric_definition"
         )
-        self.assertEqual(metric_question["source"], "knowledge_graph_query")
+        self.assertEqual(metric_question["source"], "nebula_graph_query")
         self.assertIn("转化路径：患者到会员的转化链路", metric_question["options"])
         self.assertIn(
-            {"from": "患者", "relation": "转化", "to": "会员", "reason": "来自 knowledge_graph_query 的图谱关系。"},
+            {"from": "患者", "relation": "转化", "to": "会员", "reason": "来自 nebula_graph_query 的图谱关系。"},
             result["graph_scope"]["required_relationships"],
         )
 
@@ -1107,7 +1128,7 @@ class Agent1WorkflowTest(unittest.TestCase):
 
         tool_names = {tool.name for tool in scheduler.tools}
 
-        self.assertEqual(tool_names, {"knowledge_graph_query", "problem_reporter"})
+        self.assertEqual(tool_names, {"nebula_graph_query", "problem_reporter"})
         self.assertNotIn("knowledge_base_query", tool_names)
 
     def test_run_agent1_clarification_queries_graph_tool_before_planning(self):
@@ -1115,7 +1136,7 @@ class Agent1WorkflowTest(unittest.TestCase):
             def __init__(self):
                 self.queries = []
 
-            def _run(self, query):
+            def _run(self, query, **_kwargs):
                 self.queries.append(query)
                 return json.dumps(sample_medgraph(), ensure_ascii=False)
 
@@ -1130,7 +1151,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertEqual(result["clarification_result"]["status"], "needs_clarification")
         self.assertEqual(
             result["clarification_result"]["clarification_questions"][0]["source"],
-            "knowledge_graph_query",
+            "nebula_graph_query",
         )
 
     def test_run_agent1_clarification_queries_effective_business_question_from_context(self):
@@ -1138,7 +1159,7 @@ class Agent1WorkflowTest(unittest.TestCase):
             def __init__(self):
                 self.queries = []
 
-            def _run(self, query):
+            def _run(self, query, **_kwargs):
                 self.queries.append(query)
                 return json.dumps(sample_medgraph(), ensure_ascii=False)
 
@@ -1158,7 +1179,7 @@ class Agent1WorkflowTest(unittest.TestCase):
 
     def test_run_agent1_clarification_blocks_on_strict_graph_api_error(self):
         class FakeGraphTool:
-            def _run(self, _query):
+            def _run(self, _query, **_kwargs):
                 return json.dumps(
                     {
                         "status": "error",
@@ -1179,7 +1200,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertEqual(result["task_contract"], {})
         self.assertEqual(
             result["clarification_result"]["blocking_reason"]["source"],
-            "knowledge_graph_query",
+            "nebula_graph_query",
         )
         self.assertIn("403", result["clarification_result"]["blocking_reason"]["error"])
 
@@ -1192,7 +1213,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         review = agent.review_agent2_result(
             agent1_output,
             {
-                "completed_capabilities": ["knowledge_graph_query"],
+                "completed_capabilities": ["nebula_graph_query"],
                 "final_report": "患者手机号 13812345678 出现在报告中。",
                 "analysis_result": {"status": "success"},
             },
@@ -1278,7 +1299,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertEqual(result["status"], "needs_clarification")
         self.assertEqual(
             result["clarification_questions"][0]["source"],
-            "knowledge_graph_query",
+            "nebula_graph_query",
         )
 
 

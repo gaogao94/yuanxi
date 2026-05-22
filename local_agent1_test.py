@@ -13,7 +13,7 @@ import re
 from dotenv import load_dotenv
 
 from agents.agent1 import Agent1, Agent1LLMClarifier, Agent1LLMError, run_agent1_clarification
-from tools.kg_query import KnowledgeGraphQueryTool
+from tools.nebula_graph_query import NebulaGraphQueryTool
 
 
 MAX_CONVERSATION_TURNS = 12
@@ -52,7 +52,7 @@ def main() -> None:
 
 
 def _load_graph(question: str) -> dict:
-    raw_result = KnowledgeGraphQueryTool()._run(question)
+    raw_result = NebulaGraphQueryTool()._run(question, output_format="json")
     return json.loads(raw_result)
 
 

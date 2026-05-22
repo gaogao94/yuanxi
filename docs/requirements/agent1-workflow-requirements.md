@@ -7,7 +7,7 @@
 - 用户在当前对话中明确给出的系统流程判断。
 - 用户在当前对话中明确给出的 Agent1 三项核心任务：需求澄清、知识获取、步骤拆解。
 - 用户在当前对话中补充的全量 Task 清单。
-- 当前仓库已有文件：`README.md`、`agents/agent2.py`、`tools/kg_query.py`。
+- 当前仓库已有文件：`README.md`、`agents/agent2.py`、`tools/nebula_graph_query.py`。
 
 前序参考文件链接：
 
@@ -413,7 +413,7 @@ Agent1 包含三个核心能力：
         "id": "step_1",
         "name": "步骤名称",
         "executor": "Agent2",
-        "type": "knowledge_graph_query | data_fetch | sql_check | basic_analysis | advanced_analysis | visualization | ppt_generation | reasoning",
+        "type": "nebula_graph_query | data_fetch | sql_check | basic_analysis | advanced_analysis | visualization | ppt_generation | reasoning",
         "depends_on": [],
         "can_parallel": false,
         "method": "具体工作方法",
