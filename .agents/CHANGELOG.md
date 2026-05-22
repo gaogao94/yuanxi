@@ -1,5 +1,21 @@
 # Agent Collaboration Changelog
 
+## [2026-05-22 10:25] 适配 ECharts 可视化工具封装
+
+- Agent：trae
+- 状态：完成
+- 修改文件：
+  - `tools/visualization.py`
+- 变更摘要：将 `VisualizationTool` 从生成本地 PNG 模拟路径升级为生成结构化的 ECharts `option` 配置。支持柱状图、折线图、饼图和对比图，并允许通过可选的 `data` 参数注入自定义业务数据。
+- 前端影响：前端可直接接收 JSON 格式的 ECharts 配置进行渲染，交互性和灵活性更高。
+- 后端影响：工具类逻辑更新，不再执行 `os.makedirs` 创建图片目录。
+- 接口影响：`_run` 方法签名变更，支持 `data` 参数；返回值为包含 ECharts 配置的 JSON 文本。
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `python3 tools/visualization.py`：通过
+- 遗留问题：无
+
 ## [2026-05-22 10:00] 补充 .gitignore 依赖文件忽略规则
 
 - Agent：trae
