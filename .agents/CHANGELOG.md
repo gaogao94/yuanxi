@@ -1,5 +1,85 @@
 # Agent Collaboration Changelog
 
+## [2026-05-20 15:59] Agent1 能力合同替代固定 todos
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `agents/agent1.py`
+  - `integration.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `tools/kg_query.py`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：Agent1 的 `task_contract` 不再输出固定 `todos`。合同现在只负责说明澄清后的任务、输入范围、图谱边界、Agent2 必须满足的能力、验收标准、安全约束和最终交付要求；具体任务拆分、执行步骤和工具调用顺序由 Agent2 自主决定。拉取远端最新代码后，保留 Agent2 新增的 `tools/nebula_graph_query.py`，并恢复 Agent1 需要的结构化 JSON 图谱工具 `tools/kg_query.py`。
+- 前端影响：无
+- 后端影响：Agent1 审核从检查 `completed_todos` 改为检查 `completed_capabilities`；Workflow 模拟执行也改为按 `required_capabilities` 回填结果。
+- 接口影响：删除 `task_contract.todos`；新增或强化 `clarified_task`、`graph_query_boundary`、`graph_entity_hints`、`graph_relationship_hints`、`required_capabilities`、`acceptance_criteria`、`safety_constraints`、`agent2_planning_policy`、`expected_deliverable`。Agent2 必须使用同一个 `knowledge_graph_query` 工具自行查询图数据库。
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_review_agent2_result_does_not_count_cache_as_data_fetch`：通过
+  - `.venv/bin/python -m unittest discover -s tests`：通过，48 个测试
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`：通过
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`：通过，真实 DeepSeek + Graph API 输出能力合同，不含 `todos`，包含 `root_cause_analysis` 和 `agent2_planning_policy.execution_steps=agent2_decides`
+  - `git diff --check`：通过
+- 遗留问题：
+  - Agent2 仍需实现按 `required_capabilities` 自主规划执行的真实工具链路
+
+## [2026-05-20 15:40] Agent1 诊断任务拆分
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `agents/agent1.py`
+  - `tests/test_agent1_workflow.py`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：当 `task_contract.input_context.analysis_intent = root_cause_analysis` 时，Agent1 现在会把 Agent2 合同拆成 9 步诊断流程：验证问题是否成立、拆解影响维度、形成原因假设和证据链、准备诊断可视化输出、组装诊断报告。普通指标分析合同仍保持原 7 步结构。
+- 前端影响：无
+- 后端影响：Agent2 可直接按诊断步骤执行，不再把原因分析压在普通指标分析步骤里。
+- 接口影响：诊断类 `task_contract.todos` 步骤更细；诊断类 `final_expected_output.sections` 增加“问题是否成立”“对比基准”“原因假设”“证据链”。
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_captures_low_metric_root_cause_intent_for_agent2`：通过
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`：通过，真实 DeepSeek + Graph API 输出诊断类 9 步合同
+  - `.venv/bin/python -m unittest discover -s tests`：通过，47 个测试
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`：通过
+  - `git diff --check`：通过
+- 遗留问题：
+  - Agent2 实现仍需按新的诊断步骤消费合同并调用真实工具执行
+
+## [2026-05-20 15:26] Agent1 诊断类问题意图捕获
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `agents/agent1.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：Agent1 现在会识别“转化率很低，为什么”“下降原因”“异常原因”等诊断类问题，并在 `task_contract.input_context` 中写入 `analysis_intent`、`problem_statement` 和 `problem_signal`。Agent2 需要先验证该问题信号是否成立，再进行原因拆解。同步修复 LLM 未结构化写入有效澄清回答时的空转问题，允许本地流程用确定性解析接住“一个月”“仙乐斯”等有效回答。
+- 前端影响：无
+- 后端影响：Agent2 可通过新增上下文字段知道这是原因分析任务，而不是普通指标查询。
+- 接口影响：`task_contract.input_context` 新增向后兼容字段：`analysis_intent`、`problem_statement`、`problem_signal`。
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_captures_low_metric_root_cause_intent_for_agent2`：通过
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_local_agent1_chat_captures_root_cause_intent_and_valid_clinic_reply`：通过
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`：通过，真实 DeepSeek + Graph API 生成包含诊断意图的 ready 合同
+  - `.venv/bin/python -m unittest discover -s tests`：通过，47 个测试
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`：通过
+  - `git diff --check`：通过
+- 遗留问题：
+  - `problem_signal.comparison_baseline` 当前为 `unspecified`，Agent2 需要自行用真实数据查找可用基准并明确说明验证结论
+
 ## [2026-05-20 14:50] Agent1 图谱选项稳定展示
 
 - Agent：codex-gpt5

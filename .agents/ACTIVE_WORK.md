@@ -437,3 +437,83 @@
 - 验证结果：图谱选项渲染单测通过；真实 DeepSeek + Graph API 本地流程稳定列出 4 个转化相关口径选项，编号 `1` 映射为“转化率：患者转化为会员的比例”，最终生成 ready 合同
 - 未验证项：未在 PyCharm UI 内点击运行；命令行已验证同一脚本
 - 风险或假设：其他正式集成端也应渲染 `clarification_questions.options`，不要只展示 LLM 生成的自然语言问题
+
+## [2026-05-20 15:26] Agent: codex-gpt5
+
+- 状态：已完成
+- 任务：让 Agent1 捕获“转化率很低，为什么”这类原因分析意图并写入 Agent2 合同
+- 实际修改文件：
+  - `agents/agent1.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 前端影响：无
+- 后端影响：`task_contract.input_context` 增加 `analysis_intent`、`problem_statement`、`problem_signal`；本地流程可在 LLM 未结构化写入有效澄清回答时用确定性解析接住
+- 接口影响：`task_contract.input_context` 新增向后兼容字段，Agent2 可据此先验证“低/异常”是否成立，再做原因拆解
+- 数据库影响：无
+- 配置影响：无
+- 验证命令：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_captures_low_metric_root_cause_intent_for_agent2`
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_local_agent1_chat_captures_root_cause_intent_and_valid_clinic_reply`
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`
+  - `.venv/bin/python -m unittest discover -s tests`
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`
+  - `git diff --check`
+- 验证结果：47 个测试通过；真实 DeepSeek + Graph API 本地流程生成 ready 合同，包含 `analysis_intent=root_cause_analysis`、`problem_statement=转化率很低，为什么`、`problem_signal.type=low_metric` 和 `time_range=2026-04-20 to 2026-05-20`
+- 未验证项：未在 PyCharm UI 内点击运行；命令行已验证同一脚本
+- 风险或假设：`problem_signal.comparison_baseline` 当前为 `unspecified`，Agent2 必须用可用数据验证，不得默认“确实很低”
+
+## [2026-05-20 15:40] Agent: codex-gpt5
+
+- 状态：已完成
+- 任务：将 Agent1 的原因分析合同拆成更明确的 Agent2 诊断步骤
+- 实际修改文件：
+  - `agents/agent1.py`
+  - `tests/test_agent1_workflow.py`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 前端影响：无
+- 后端影响：`analysis_intent=root_cause_analysis` 时，Agent2 合同从普通分析步骤拆为 9 步诊断流程：验证问题是否成立、拆解影响维度、形成原因假设和证据链、准备诊断可视化、组装诊断报告
+- 接口影响：`task_contract.todos` 在诊断类任务下新增更细步骤；普通指标分析合同保持原有结构；诊断类 `final_expected_output.sections` 增加“问题是否成立”“对比基准”“原因假设”“证据链”
+- 数据库影响：无
+- 配置影响：无
+- 验证命令：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_captures_low_metric_root_cause_intent_for_agent2`
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`
+  - `.venv/bin/python -m unittest discover -s tests`
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`
+  - `git diff --check`
+- 验证结果：47 个测试通过；真实 DeepSeek + Graph API 本地流程输出诊断类 9 步合同，并包含 `analysis_intent=root_cause_analysis`、`problem_signal`、“问题是否成立”和“证据链”等输出章节
+- 未验证项：未在 PyCharm UI 内点击运行；命令行已验证同一脚本
+- 风险或假设：Agent2 需要按新的诊断步骤消费 `task_contract.todos`；普通指标分析路径保持 7 步不变
+
+## [2026-05-20 15:59] Agent: codex-gpt5
+
+- 状态：已完成
+- 任务：移除 Agent1 输出给 Agent2 的固定 `todos`，改为 Agent2 自主规划的能力合同
+- 实际修改文件：
+  - `agents/agent1.py`
+  - `integration.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `tools/kg_query.py`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 前端影响：无
+- 后端影响：`task_contract` 不再包含固定执行步骤；Agent1 只输出澄清任务、输入范围、图谱边界、必需能力、验收标准、安全约束和交付要求；Agent1 审核改为检查 `completed_capabilities`；拉取远端最新代码后保留 Agent2 的 `tools/nebula_graph_query.py`，并恢复 Agent1 使用的 `tools/kg_query.py`
+- 接口影响：删除 `task_contract.todos`；新增或强化 `clarified_task`、`graph_query_boundary`、`graph_entity_hints`、`graph_relationship_hints`、`required_capabilities`、`acceptance_criteria`、`safety_constraints`、`agent2_planning_policy`、`expected_deliverable`
+- 数据库影响：无
+- 配置影响：无
+- 验证命令：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_review_agent2_result_does_not_count_cache_as_data_fetch`
+  - `.venv/bin/python -m unittest discover -s tests`
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`
+  - `git diff --check`
+- 验证结果：新增缓存不能替代取数的审核测试通过；48 个测试通过；编译通过；真实 DeepSeek + Graph API 本地流程输出能力合同，不含 `todos`，包含 `root_cause_analysis` 和 `agent2_planning_policy.execution_steps=agent2_decides`；空白检查通过
+- 未验证项：未在 PyCharm UI 内点击运行；命令行已验证同一脚本
+- 风险或假设：Agent2 必须按 `required_capabilities` 自主规划执行并回填 `completed_capabilities` 或等价结果字段；Agent1 不再向 Agent2 提供固定步骤兜底

@@ -175,8 +175,9 @@ def _run_conversation(question: str) -> dict:
 
         replacement_question = None
         llm_changed_context = False
+        llm_message = ""
         if llm is not None:
-            replacement_question, llm_changed_context = _interpret_answer_with_llm(
+            replacement_question, llm_changed_context, llm_message = _interpret_answer_with_llm(
                 llm,
                 question,
                 context,
@@ -190,8 +191,10 @@ def _run_conversation(question: str) -> dict:
             context.clear()
             continue
 
-        if llm is None and _answer_looks_valid_for_item(item, answer):
+        if (llm is None or not llm_changed_context) and _answer_looks_valid_for_item(item, answer):
             replacement_question = _apply_answer_to_context(context, item, answer)
+        elif llm_message:
+            print(f"Agent1：{llm_message}")
         if replacement_question:
             question = replacement_question
             context.clear()
@@ -310,7 +313,7 @@ def _interpret_answer_with_llm(
     result: dict,
     item: dict,
     answer: str,
-) -> tuple[str | None, bool]:
+) -> tuple[str | None, bool, str]:
     try:
         turn = llm.interpret_user_reply(
             original_question=question,
@@ -322,13 +325,12 @@ def _interpret_answer_with_llm(
     except Agent1LLMError as exc:
         if not _allow_deterministic_fallback():
             raise SystemExit(f"Agent1：LLM 解析用户回复失败：{exc}") from exc
-        return None, False
+        return None, False, ""
 
     changed_context = _llm_turn_has_context_change(turn)
     replacement_question = _apply_llm_turn_to_context(context, turn)
-    if turn.get("assistant_message") and not replacement_question and not changed_context:
-        print(f"Agent1：{turn['assistant_message']}")
-    return replacement_question, changed_context
+    assistant_message = str(turn.get("assistant_message") or "").strip()
+    return replacement_question, changed_context, assistant_message
 
 
 def _llm_turn_has_context_change(turn: dict) -> bool:

@@ -218,41 +218,59 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertEqual(result["clarification_result"]["expected_result"]["format"], "Markdown")
         self.assertEqual(result["task_contract"]["task_id"], repeated["task_contract"]["task_id"])
         self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["SH001", "SH002"])
+        self.assertNotIn("todos", result["task_contract"])
         self.assertTrue(result["graph_scope"]["target_entities"])
         self.assertTrue(result["graph_scope"]["required_relationships"])
 
-        todos = result["task_contract"]["todos"]
-        self.assertGreaterEqual(len(todos), 6)
-        self.assertTrue(all(todo["executor"] == "Agent2" for todo in todos))
-        self.assertIn("knowledge_graph_query", {todo["type"] for todo in todos})
-        self.assertIn("data_fetch", {todo["type"] for todo in todos})
-        self.assertIn("visualization", {todo["type"] for todo in todos})
+        capability_names = {
+            capability["name"]
+            for capability in result["task_contract"]["required_capabilities"]
+            if capability["required"]
+        }
+        self.assertIn("knowledge_graph_query", capability_names)
+        self.assertIn("data_fetch", capability_names)
+        self.assertIn("sql_check", capability_names)
+        self.assertIn("metric_analysis", capability_names)
+        self.assertIn("visualization", capability_names)
+        self.assertIn("report_generation", capability_names)
+        self.assertEqual(
+            result["task_contract"]["agent2_planning_policy"]["execution_steps"],
+            "agent2_decides",
+        )
+        self.assertEqual(
+            result["task_contract"]["agent2_planning_policy"]["must_use_same_graph_tool"],
+            "knowledge_graph_query",
+        )
 
-    def test_task_contract_uses_chinese_for_human_readable_todos(self):
+    def test_task_contract_uses_capabilities_instead_of_fixed_todos(self):
         agent = Agent1()
 
         result = agent.prepare_task("请分析2026年4月上海门店SH001初诊转化率，并输出Markdown报告")
 
+        task_contract = result["task_contract"]
         input_context = result["task_contract"]["input_context"]
         self.assertEqual(input_context["metric"], "first_visit_conversion_rate")
         self.assertEqual(input_context["metric_label"], "初诊转化率")
+        self.assertNotIn("todos", task_contract)
 
-        todos = result["task_contract"]["todos"]
-        self.assertEqual(todos[0]["name"], "确认图谱实体和关系")
-        self.assertIn("图谱", todos[0]["method"])
-        self.assertIn("只读", todos[1]["method"])
+        capabilities = task_contract["required_capabilities"]
+        graph_capability = next(
+            capability for capability in capabilities if capability["name"] == "knowledge_graph_query"
+        )
+        data_capability = next(
+            capability for capability in capabilities if capability["name"] == "data_fetch"
+        )
+        self.assertIn("图数据库", graph_capability["purpose"])
+        self.assertIn("只读", data_capability["purpose"])
+        self.assertTrue(task_contract["agent2_planning_policy"]["agent1_does_not_prescribe_steps"])
 
         human_text = json.dumps(
             [
                 {
-                    "name": todo["name"],
-                    "method": todo["method"],
-                    "expected_output": todo["expected_output"],
-                    "self_check": todo["self_check"],
-                    "risk": todo["risk"],
-                    "fallback": todo["fallback"],
+                    "purpose": capability["purpose"],
+                    "acceptance_criteria": capability["acceptance_criteria"],
                 }
-                for todo in todos
+                for capability in capabilities
             ],
             ensure_ascii=False,
         )
@@ -390,6 +408,47 @@ class Agent1WorkflowTest(unittest.TestCase):
             for question in result["clarification_result"]["clarification_questions"]
         }
         self.assertNotIn("clinic_scope", question_ids)
+
+    def test_prepare_task_captures_low_metric_root_cause_intent_for_agent2(self):
+        agent = Agent1()
+
+        with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}):
+            result = agent.prepare_task(
+                "转化率很低，为什么",
+                user_context={
+                    "graph_data": sample_medgraph(),
+                    "metric": "first_visit_conversion_rate",
+                    "time_range": "最近一个月",
+                    "clinic_scope": ["仙乐斯门店"],
+                },
+            )
+
+        input_context = result["task_contract"]["input_context"]
+        self.assertEqual(result["clarification_result"]["status"], "ready")
+        self.assertEqual(input_context["analysis_intent"], "root_cause_analysis")
+        self.assertEqual(input_context["problem_statement"], "转化率很低，为什么")
+        self.assertEqual(input_context["problem_signal"]["type"], "low_metric")
+        self.assertTrue(input_context["problem_signal"]["requires_baseline_validation"])
+        self.assertIn("验证初诊转化率是否偏低", result["task_contract"]["goal"])
+        self.assertNotIn("todos", result["task_contract"])
+        capability_names = {
+            capability["name"]
+            for capability in result["task_contract"]["required_capabilities"]
+            if capability["required"]
+        }
+        self.assertIn("root_cause_analysis", capability_names)
+        self.assertNotIn("metric_analysis", capability_names)
+        root_cause_capability = next(
+            capability
+            for capability in result["task_contract"]["required_capabilities"]
+            if capability["name"] == "root_cause_analysis"
+        )
+        root_cause_text = json.dumps(root_cause_capability, ensure_ascii=False)
+        self.assertIn("必须先验证 problem_signal 是否成立", root_cause_text)
+        self.assertIn("门店、医生、渠道", root_cause_text)
+        self.assertIn("每条原因必须包含数据证据或图谱证据", root_cause_text)
+        self.assertIn("问题是否成立", result["task_contract"]["final_expected_output"]["sections"])
+        self.assertIn("证据链", result["task_contract"]["final_expected_output"]["sections"])
 
     def test_prepare_task_detects_cash_flow_as_business_metric(self):
         agent = Agent1()
@@ -697,6 +756,23 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertEqual(result["clarification_result"]["status"], "ready")
         self.assertEqual(input_context["time_range"], "2026-04-15 to 2026-05-20")
         self.assertEqual(input_context["clinic_scope"], ["仙乐斯门店"])
+
+    def test_local_agent1_chat_captures_root_cause_intent_and_valid_clinic_reply(self):
+        with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}), patch(
+            "local_agent1_test._build_llm_clarifier",
+            return_value=FakeNamedClinicLLM(),
+        ), patch(
+            "local_agent1_test._load_graph",
+            return_value=sample_medgraph(),
+        ), patch("builtins.input", side_effect=["转化率", "一个月", "仙乐斯"]):
+            result = _run_conversation("转化率很低，为什么")
+
+        input_context = result["task_contract"]["input_context"]
+        self.assertEqual(result["clarification_result"]["status"], "ready")
+        self.assertEqual(input_context["analysis_intent"], "root_cause_analysis")
+        self.assertEqual(input_context["problem_signal"]["type"], "low_metric")
+        self.assertEqual(input_context["time_range"], "2026-04-20 to 2026-05-20")
+        self.assertEqual(input_context["clinic_scope"], ["仙乐斯"])
 
     def test_llm_clarification_stably_lists_graph_options_and_maps_number(self):
         class FailingOptionLLM:
@@ -1107,17 +1183,16 @@ class Agent1WorkflowTest(unittest.TestCase):
         )
         self.assertIn("403", result["clarification_result"]["blocking_reason"]["error"])
 
-    def test_review_agent2_result_detects_missing_todos_and_privacy_leak(self):
+    def test_review_agent2_result_detects_missing_capabilities_and_privacy_leak(self):
         agent = Agent1()
         agent1_output = agent.prepare_task(
             "请分析2026年4月上海门店SH001初诊转化率，并输出Markdown报告"
         )
-        first_todo = agent1_output["task_contract"]["todos"][0]["id"]
 
         review = agent.review_agent2_result(
             agent1_output,
             {
-                "completed_todos": [first_todo],
+                "completed_capabilities": ["knowledge_graph_query"],
                 "final_report": "患者手机号 13812345678 出现在报告中。",
                 "analysis_result": {"status": "success"},
             },
@@ -1125,9 +1200,31 @@ class Agent1WorkflowTest(unittest.TestCase):
 
         review_result = review["review_result"]
         self.assertEqual(review_result["status"], "blocked")
-        self.assertTrue(review_result["missing_todos"])
+        self.assertTrue(review_result["missing_capabilities"])
         self.assertEqual(review_result["privacy_check"], "failed")
         self.assertTrue(review_result["revision_requests"])
+
+    def test_review_agent2_result_does_not_count_cache_as_data_fetch(self):
+        agent = Agent1()
+        agent1_output = agent.prepare_task(
+            "请分析2026年4月上海门店SH001初诊转化率，并输出Markdown报告"
+        )
+
+        review = agent.review_agent2_result(
+            agent1_output,
+            {
+                "knowledge_graph_result": {"status": "success"},
+                "cache_result": {"status": "hit"},
+                "sql_check_result": {"status": "success"},
+                "analysis_result": {"status": "success"},
+                "visualization_result": {"status": "success"},
+                "final_report": "本次初诊转化率分析已完成，包含图谱和数据证据。",
+            },
+        )
+
+        review_result = review["review_result"]
+        self.assertEqual(review_result["status"], "needs_revision")
+        self.assertIn("data_fetch", review_result["missing_capabilities"])
 
     def test_run_workflow_passes_only_task_contract_to_agent2(self):
         captured_inputs = []
@@ -1135,8 +1232,14 @@ class Agent1WorkflowTest(unittest.TestCase):
         def agent2_runner(task_contract):
             captured_inputs.append(task_contract)
             return {
-                "completed_todos": [todo["id"] for todo in task_contract["todos"]],
+                "completed_capabilities": [
+                    capability["name"]
+                    for capability in task_contract["required_capabilities"]
+                    if capability["required"]
+                ],
                 "data_fetch_result": {"status": "success"},
+                "sql_check_result": {"status": "success"},
+                "knowledge_graph_result": {"status": "success"},
                 "analysis_result": {"status": "success"},
                 "visualization_result": {"status": "success"},
                 "final_report": "本次初诊转化率分析已完成，未包含患者敏感信息。",

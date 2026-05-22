@@ -14,7 +14,7 @@
 
 Agent1 负责把用户自然语言问题转成结构化分析任务合同。澄清过程中，Agent1 需要查询图数据库 API，拿到图数据库返回的 schema、点和边，再基于这些图谱信息生成澄清问题或任务合同。
 
-Agent2 负责接收 Agent1 的任务合同，并按合同执行图谱查询、取数、SQL 校验、分析和报告生成。
+Agent2 负责接收 Agent1 的任务合同，并根据合同自主规划图谱查询、取数、SQL 校验、分析和报告生成的执行步骤。
 
 Agent3 当前不参与主链路，也不需要现在实现。Agent1/Agent2 只需要把执行中发现的问题、图谱缺口、口径歧义、数据异常上报出去，作为未来 Agent3 复盘输入。
 
@@ -27,7 +27,7 @@ Workflow / Coordinator
   ↓
 Agent1：识别业务词 → 查询图数据库 → 需求澄清 → 生成 task_contract
   ↓
-Agent2：按 task_contract 执行取数、分析、可视化、报告
+Agent2：按 task_contract 自主规划并执行取数、分析、可视化、报告
   ↓
 Agent1：审核 Agent2 输出
   ↓
@@ -102,7 +102,7 @@ Agent1 必须 CrewAI 化：需要定义 CrewAI `Agent`、`Task` 和可调用 too
 
 后置职责：
 
-- 审核 Agent2 是否完成 `task_contract.todos`。
+- 审核 Agent2 是否满足 `task_contract.required_capabilities` 和验收标准。
 - 审核 Agent2 输出是否符合指标口径。
 - 审核数据范围是否越过合同范围。
 - 审核结论是否有证据。
@@ -149,7 +149,7 @@ CrewAI Agent1 职责：
 - 校验 CrewAI 输出是否包含必填字段。
 - 规范化输出结构。
 - 生成稳定 `task_id`。
-- 补齐 `task_contract.todos`。
+- 生成稳定 `task_contract`，包含澄清后的任务、边界、能力要求、验收标准和交付要求。
 - 审核 Agent2 输出。
 - 在没有 LLM Key 时提供本地测试和降级能力。
 
@@ -183,7 +183,7 @@ Agent2 是执行者。
 职责：
 
 - 只接收 Agent1 输出的 `task_contract`。
-- 根据合同执行图谱查询、业务取数、SQL 检查、缓存、基础分析、进阶分析、可视化和报告生成。
+- 根据合同自主规划执行步骤和工具调用顺序，完成图谱查询、业务取数、SQL 检查、缓存、基础分析、进阶分析、可视化和报告生成。
 - 输出结构化 `agent2_result`。
 - 遇到问题时上报，例如 SQL 报错、字段缺失、数据异常、图谱缺口。
 
@@ -465,7 +465,7 @@ Agent1 应生成：
 
 当 `status = ready` 时，Agent1 输出 `task_contract`。
 
-`task_contract` 是 Agent2 的唯一输入。
+`task_contract` 是 Agent2 的唯一任务输入。Agent1 只负责澄清任务、限定边界和声明 Agent2 必须具备的能力，不为 Agent2 固定执行步骤；Agent2 根据合同自主决定具体怎么执行、什么时候调用工具、如何拆分子任务。
 
 结构：
 
@@ -474,19 +474,94 @@ Agent1 应生成：
   "task_contract": {
     "task_id": "task_xxx",
     "goal": "本次分析目标",
+    "clarified_task": {
+      "original_question": "转化率很低，为什么",
+      "understood_intent": "验证初诊转化率是否偏低，并定位原因和建议动作",
+      "analysis_intent": "root_cause_analysis",
+      "agent2_execution_owner": true,
+      "execution_note": "Agent1 只负责澄清任务和边界；Agent2 自主规划执行步骤和工具调用顺序。"
+    },
     "input_context": {
       "metric": "first_visit_conversion_rate",
       "metric_label": "初诊转化率",
       "metric_definition": "基于图谱关系 patient --转化--> member，统计患者转化为会员的比例；具体分母需用户或数据口径确认",
-      "formula": "converted_patient_count / eligible_patient_count",
-      "time_range": "2026-04",
-      "clinic_scope": ["SH001", "SH002"],
+      "time_range": "2026-04-20 to 2026-05-20",
+      "clinic_scope": ["仙乐斯门店"],
       "population": "患者",
-      "required_entities": ["患者", "会员"],
-      "required_relationships": ["转化"],
-      "graph_scope_ref": "graph_scope"
+      "analysis_intent": "root_cause_analysis",
+      "problem_statement": "转化率很低，为什么",
+      "problem_signal": {
+        "type": "low_metric",
+        "metric": "first_visit_conversion_rate",
+        "metric_label": "初诊转化率",
+        "comparison_baseline": "unspecified",
+        "requires_baseline_validation": true
+      }
     },
-    "todos": [],
+    "graph_query_boundary": {
+      "allowed_entity_types": ["患者", "会员", "门店", "医生"],
+      "allowed_relationships": ["转化", "初诊医生", "责任医生"],
+      "constraints": ["只读查询", "不扩大门店和时间范围"]
+    },
+    "graph_entity_hints": ["患者", "会员"],
+    "graph_relationship_hints": ["转化"],
+    "required_capabilities": [
+      {
+        "name": "knowledge_graph_query",
+        "required": true,
+        "owner": "Agent2",
+        "purpose": "Agent2 使用与 Agent1 相同的 knowledge_graph_query 工具，自主查询图数据库并确认实体、关系、字段位置和图谱缺口。",
+        "acceptance_criteria": [
+          "必须记录查询到的实体、关系和缺口。",
+          "必须遵守 graph_query_boundary。",
+          "不得使用本地 mock 替代真实图谱查询结果。"
+        ]
+      },
+      {
+        "name": "data_fetch",
+        "required": true,
+        "owner": "Agent2",
+        "purpose": "Agent2 自主生成只读查询或调用取数工具，获取限定范围内的业务数据。",
+        "acceptance_criteria": [
+          "必须包含指标、时间范围、门店范围和人群过滤条件。",
+          "必须返回字段、行数、过滤条件和脱敏说明。",
+          "不得扩大取数范围。"
+        ]
+      },
+      {
+        "name": "root_cause_analysis",
+        "required": true,
+        "owner": "Agent2",
+        "purpose": "验证初诊转化率是否偏低或异常，并拆解主要影响维度和原因假设。",
+        "acceptance_criteria": [
+          "必须先验证 problem_signal 是否成立，并说明对比基准。",
+          "没有可用基准时必须标记为 unable_to_validate，不能默认问题成立。",
+          "每条原因必须包含数据证据或图谱证据、反证或限制、置信度和建议验证动作。"
+        ]
+      }
+    ],
+    "acceptance_criteria": [
+      "Agent2 必须自主规划执行步骤，不依赖 Agent1 固定步骤。",
+      "Agent2 必须使用 task_contract.input_context 作为唯一业务范围来源。",
+      "Agent2 必须自行调用 knowledge_graph_query 确认图谱实体和关系。",
+      "Agent2 必须输出可被 Agent1 审核的结构化结果和最终报告。"
+    ],
+    "safety_constraints": [
+      "所有数据库操作必须只读。",
+      "必须限定 input_context 中的指标、时间范围、门店范围和人群范围。",
+      "不得输出未脱敏个人身份信息、联系方式或支付凭证。",
+      "真实工具失败时必须返回结构化失败原因，不得生成模拟结论。"
+    ],
+    "agent2_planning_policy": {
+      "execution_steps": "agent2_decides",
+      "tool_call_order": "agent2_decides",
+      "must_use_same_graph_tool": "knowledge_graph_query",
+      "agent1_does_not_prescribe_steps": true
+    },
+    "expected_deliverable": {
+      "format": "Markdown",
+      "sections": ["问题定义", "分析范围", "核心指标结果", "维度拆解", "主要原因", "建议动作", "限制与风险"]
+    },
     "final_expected_output": {
       "format": "Markdown",
       "sections": ["问题定义", "分析范围", "核心指标结果", "维度拆解", "主要原因", "建议动作", "限制与风险"]
@@ -497,21 +572,57 @@ Agent1 应生成：
 
 约定：
 
-- `id`、`type`、`executor`、`depends_on` 等机器字段保留英文或稳定标识，便于 Agent2 程序化解析。
-- `name`、`method`、`expected_output`、`self_check`、`risk`、`fallback` 等人类可读任务说明使用中文，便于业务和工程评审。
 - `input_context.metric` 保留指标标识，`input_context.metric_label` 提供中文指标名。
+- `input_context.analysis_intent` 标记任务类型；当用户输入“很低/为什么/异常/下降”等原因分析诉求时，值为 `root_cause_analysis`。
+- `input_context.problem_signal` 保存用户声称的问题信号，例如低转化率；Agent2 必须先用历史同期、环比、同类门店均值或目标值等可用基准验证该信号是否成立，不能默认“确实很低”。
+- `task_contract` 不包含固定 `todos`。Agent1 不声明 step_1、step_2 这类执行顺序。
+- `required_capabilities` 只表达 Agent2 必须具备和证明完成的能力，不表达执行步骤。
+- `agent2_planning_policy.execution_steps = agent2_decides`，表示 Agent2 自主拆分任务。
+- `agent2_planning_policy.tool_call_order = agent2_decides`，表示 Agent2 自主决定工具调用顺序。
+- `agent2_planning_policy.must_use_same_graph_tool = knowledge_graph_query`，表示 Agent1/Agent2 使用同一个图数据库查询工具，Agent2 需要自己调用该工具复核图谱范围。
+- `graph_query_boundary` 是边界，不是查询结果替代品；Agent2 不能只消费 Agent1 的图谱摘要，必须按需自己查图数据库。
 
-标准 `todos`：
+标准指标分析 `required_capabilities`：
 
-| Step | Executor | Type | 目的 |
-|---|---|---|---|
-| `step_1` | Agent2 | `knowledge_graph_query` | 确认图谱实体和关系 |
-| `step_2` | Agent2 | `data_fetch` | 获取限定范围内的业务数据 |
-| `step_3` | Agent2 | `sql_check` | 检查 SQL 和数据安全 |
-| `step_4` | Agent2 | `data_fetch` | 缓存中间数据集 |
-| `step_5` | Agent2 | `basic_analysis` | 分析指标和维度 |
-| `step_6` | Agent2 | `visualization` | 准备可视化输出 |
-| `step_7` | Agent2 | `reasoning` / `ppt_generation` | 组装 Markdown 报告或生成 PPT 报告 |
+| Capability | Required | 目的 |
+|---|---|---|
+| `knowledge_graph_query` | 是 | Agent2 用同一个图谱工具确认实体、关系、字段位置和图谱缺口 |
+| `data_fetch` | 是 | Agent2 自主生成只读查询或调用取数工具，获取限定范围内的业务数据 |
+| `sql_check` | 是 | 检查 SQL 或数据查询的只读性、边界、性能风险和隐私风险 |
+| `cache_manager` | 否 | 缓存中间数据，支持断点续跑和减少重复取数 |
+| `metric_analysis` | 是 | 计算目标指标，并完成趋势、维度拆解和建议动作 |
+| `visualization` | 是 | 生成必要的图表规格或图表文件 |
+| `report_generation` | 是 | 根据 `expected_deliverable` 生成最终报告 |
+
+诊断类原因分析 `required_capabilities`：
+
+当 `input_context.analysis_intent = root_cause_analysis` 时，Agent1 不再把任务拆成固定步骤，而是把 `metric_analysis` 替换为 `root_cause_analysis`：
+
+| Capability | Required | 目的 |
+|---|---|---|
+| `knowledge_graph_query` | 是 | Agent2 用同一个图谱工具确认实体、关系、字段位置和图谱缺口 |
+| `data_fetch` | 是 | Agent2 自主获取限定范围内的业务数据 |
+| `sql_check` | 是 | 检查 SQL 或数据查询安全 |
+| `cache_manager` | 否 | 如使用缓存，说明缓存 key、过期时间和命中状态 |
+| `root_cause_analysis` | 是 | 先验证问题是否成立，再拆解维度、形成原因假设和证据链 |
+| `visualization` | 是 | 生成诊断必要的图表规格或图表文件 |
+| `report_generation` | 是 | 生成诊断报告，明确证据、限制和未验证项 |
+
+诊断类 `final_expected_output.sections`：
+
+```json
+[
+  "问题定义",
+  "分析范围",
+  "问题是否成立",
+  "对比基准",
+  "维度拆解",
+  "原因假设",
+  "证据链",
+  "建议动作",
+  "限制与风险"
+]
+```
 
 ## Agent1 需要的工具
 
@@ -938,7 +1049,7 @@ Agent1 操作：
 任务：
 
 - Agent2 从固定 `test_task` 改为接收 `task_contract`。
-- Agent2 按合同执行步骤。
+- Agent2 根据合同中的能力要求和边界自主规划执行步骤。
 - Agent2 遇到执行异常时调用 `problem_reporter`。
 - Agent2 不调用 `knowledge_base_query`。
 - Agent2 不调用 Agent3 工具。
@@ -962,7 +1073,7 @@ Agent1 操作：
 - Agent1 不调用 `knowledge_base_query`。
 - Agent2 只接收 `task_contract`。
 - Agent2 执行异常时调用 `problem_reporter`。
-- Agent1 审核发现缺失步骤、范围越界、口径不一致、隐私泄漏。
+- Agent1 审核发现缺失能力、范围越界、口径不一致、隐私泄漏。
 
 建议命令：
 
@@ -984,7 +1095,11 @@ Agent1 操作：
 - `agents/agent1.py`：当严格真实 API 模式返回错误时，Agent1 返回 `blocked`，不使用静态规则或 mock 继续澄清。
 - `agents/agent1.py`：本地真实流程启用 `strict_graph_match` 后，如果图谱查询成功但没有命中当前指标相关实体或关系，Agent1 返回 `blocked`，不继续追问时间范围，也不生成 `task_contract`。
 - `agents/agent1.py`：`task_contract.input_context.time_range` 会将相对时间规范为具体日期区间，例如 `最近一个月` 在 2026-05-20 会规范为 `2026-04-20 to 2026-05-20`，`2026-04` 会规范为 `2026-04-01 to 2026-04-30`。
-- `agents/agent1.py`：`task_contract.todos` 中给人读的任务说明使用中文；`id`、`type`、`executor` 等机器字段保持稳定英文标识；`input_context` 增加 `metric_label` 中文指标名。
+- `agents/agent1.py`：识别“转化率很低，为什么”“下降原因”“异常原因”等诊断类问题，并在 `task_contract.input_context` 写入 `analysis_intent`、`problem_statement` 和 `problem_signal`，供 Agent2 先验证问题是否成立再做原因拆解。
+- `agents/agent1.py`：`task_contract` 不再包含固定 `todos`，改为 `required_capabilities`、`acceptance_criteria`、`safety_constraints`、`expected_deliverable` 和 `agent2_planning_policy`。
+- `agents/agent1.py`：当 `analysis_intent = root_cause_analysis` 时，Agent1 不再替 Agent2 拆固定步骤，而是要求 Agent2 具备 `root_cause_analysis` 能力：先验证问题是否成立，再拆解影响维度、形成原因假设和证据链。
+- `agents/agent1.py`：Agent1 在 `task_contract.graph_query_boundary`、`graph_entity_hints`、`graph_relationship_hints` 中提供图谱边界和提示；Agent2 必须使用同一个 `knowledge_graph_query` 工具自己查询图数据库。
+- `agents/agent1.py`：`required_capabilities` 中给人读的能力说明使用中文；`name` 等机器字段保持稳定英文标识；`input_context` 增加 `metric_label` 中文指标名。
 - `agents/agent1.py`：先判断输入是否为业务分析需求；寒暄、空泛文本或没有业务对象的输入不查询图谱，也不进入固定指标澄清模板。
 - `agents/agent1.py`：内置业务指标识别已覆盖 `现金流`，可识别现金流入、现金流出、净现金流相关问题。
 - `agents/agent1.py`：图谱命中关系后，按图谱关系动态生成口径选项，例如 `续卡` 会生成续卡数量、续卡率、续卡路径、续卡关联对象；无图谱命中时改为自由文本澄清，不再优先展示固定指标列表。
@@ -993,7 +1108,8 @@ Agent1 操作：
 - `local_agent1_test.py`：本地 PyCharm 入口改为真实 LLM 对话式澄清；默认 `AGENT1_USE_LLM=1`，Qwen/其他 OpenAI-compatible 模型负责自由文本澄清话术和回答解析，确定性核心负责边界校验和任务合同生成；当图谱命中关系并返回 `clarification_questions.options` 时，本地入口固定列出全部图谱口径选项并支持编号选择，不由 LLM 改写或省略选项；对话中用户询问“几个图谱/有哪些图谱”会作为元问题回答，不会写入业务指标；LLM 模式下不再把无法解析的用户追问确定性兜底写入 `time_range`、`metric` 或 `clinic_scope`。
 - `integration.py`：模拟 workflow，支持把 `graph_data` 传入 Agent1 澄清路径。
 - `agents/agent2.py`：Agent2 和 mock 工具。
-- `tools/kg_query.py`：`knowledge_graph_query` 工具，优先支持正式 Graph API + `Authorization: <API Key>` + Apipost 风格 `User-Agent`，兼容 `raw` Nebula 错误文本；默认可通过 `GET /spaces` 自动选择 graph space；仍保留 `MEDGRAPH_JSON_PATH` 本地 JSON fallback、NebulaGraph 查询和同结构模拟降级；设置 `GRAPH_API_STRICT=1` 时禁用本地 JSON/mock fallback，真实 API 失败会返回结构化错误。
+- `tools/kg_query.py`：Agent1 使用的 `knowledge_graph_query` 工具，优先支持正式 Graph API + `Authorization: <API Key>` + Apipost 风格 `User-Agent`，兼容 `raw` Nebula 错误文本；默认可通过 `GET /spaces` 自动选择 graph space；仍保留 `MEDGRAPH_JSON_PATH` 本地 JSON fallback、NebulaGraph 查询和同结构模拟降级；设置 `GRAPH_API_STRICT=1` 时禁用本地 JSON/mock fallback，真实 API 失败会返回结构化错误。
+- `tools/nebula_graph_query.py`：Agent2 当前使用的 NebulaGraph 查询工具；与 Agent1 的 `knowledge_graph_query` 并存，后续 Agent2 接入能力合同时需要确认是否直接复用 `knowledge_graph_query` 或在 Agent2 内部做等价适配。
 - `tools/problem_reporter.py`：问题上报工具。
 - `tests/test_agent1_workflow.py`：覆盖 Agent1 合同生成、Graph API 优先、Graph API 错误 fallback、严格真实 API 模式、图谱驱动澄清、图谱未命中阻塞、相对时间规范化、LLM JSON 解析、Qwen `<think>` 兼容、CrewAI 工具挂载、Workflow 传图谱数据、Agent1 审核。
 
@@ -1003,7 +1119,7 @@ Agent1 操作：
 - CrewAI kickoff 输出 JSON 的解析、校验和失败降级。
 - 图数据库查不到业务词时，由 Agent1 调用 `problem_reporter` 的运行时路径。
 - Agent2 执行异常时调用 `problem_reporter`。
-- Agent2 需要从固定测试任务改为消费 `task_contract`。
+- Agent2 需要从固定测试任务改为消费 `task_contract`，并根据 `required_capabilities` 自主规划执行步骤。
 
 当前不处理：
 

@@ -98,16 +98,20 @@ def run_workflow(
 
 def _simulate_agent2_result(task_contract: dict[str, Any]) -> dict[str, Any]:
     input_context = task_contract["input_context"]
-    completed_todos = [todo["id"] for todo in task_contract["todos"]]
+    completed_capabilities = [
+        capability["name"]
+        for capability in task_contract.get("required_capabilities", [])
+        if capability.get("required")
+    ]
     metric = input_context["metric"]
     time_range = input_context["time_range"]
     clinic_scope = input_context["clinic_scope"]
 
     return {
-        "completed_todos": completed_todos,
+        "completed_capabilities": completed_capabilities,
         "knowledge_graph_result": {
             "status": "success",
-            "scope": task_contract["input_context"]["graph_scope_ref"],
+            "scope": task_contract.get("graph_query_boundary", {}),
         },
         "data_fetch_result": {
             "status": "success",
