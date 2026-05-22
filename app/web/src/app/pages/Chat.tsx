@@ -1,28 +1,40 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Sparkles, Send, Search, Activity, PieChart, Presentation,
-  Building, Stethoscope, Calendar, X, Plus, ChevronDown, Database,
+  Building, Stethoscope, Calendar, X, Database, ChevronDown,
   Download, CheckSquare, Loader2, CheckCircle2, Eye, ChevronRight, ChevronLeft, Copy, Clock, FileText,
   Settings2, Bookmark, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx } from 'clsx';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 
 // Configuration
-const AVAILABLE_FIELDS: Record<string, any> = {
-  clinic: { label: '门诊', icon: Building, options: ['全部门诊', '极橙仙乐斯店', '极橙徐汇店', '极橙大宁店', '极橙金桥店'] },
-  doctor: { label: '医生', icon: Stethoscope, options: ['全部医生', '张大夫', '李大夫', '王大夫', '刘主任'] },
-  time: { label: '时间段', icon: Calendar, options: ['近7天', '近30天', '上个月', '第一季度', '今年'] },
-  output: { label: '产出格式', icon: FileText, options: ['自动判断', '生成待办 SOP', '生成 PPT 报告'] }
-};
-
 const DEFAULT_PROMPTS = [
-  { id: 'analyze_renewal', title: '分析续卡率低的原因', icon: Activity, color: 'text-blue-500', isCustom: false },
-  { id: 'analyze_conversion', title: '分析初诊转化漏斗', icon: PieChart, color: 'text-purple-500', isCustom: false },
-  { id: 'generate_report', title: '生成本月经营报告', icon: Presentation, color: 'text-orange-500', isCustom: false },
-  { id: 'check_appointment', title: '查看近期预约饱和度', icon: Calendar, color: 'text-green-500', isCustom: false },
-  { id: 'analyze_lost', title: '流失高风险患者预警', icon: Activity, color: 'text-rose-500', isCustom: false },
-  { id: 'doctor_performance', title: '核心医生业绩环比分析', icon: PieChart, color: 'text-indigo-500', isCustom: false },
+  { 
+    id: 'analyze_renewal', title: '分析续卡率低的原因', icon: Activity, color: 'text-blue-500', isCustom: false,
+    text: '帮我分析极橙仙乐斯店近30天续卡率低的原因'
+  },
+  { 
+    id: 'analyze_conversion', title: '分析初诊转化漏斗', icon: PieChart, color: 'text-purple-500', isCustom: false,
+    text: '帮我分析极橙徐汇店上个月的初诊转化漏斗'
+  },
+  { 
+    id: 'generate_report', title: '生成本月经营报告', icon: Presentation, color: 'text-orange-500', isCustom: false,
+    text: '帮我生成全部门诊近30天的经营PPT报告'
+  },
+  { 
+    id: 'check_appointment', title: '查看近期预约饱和度', icon: Calendar, color: 'text-green-500', isCustom: false,
+    text: '查看极橙仙乐斯店刘主任近7天的预约饱和度'
+  },
+  { 
+    id: 'analyze_lost', title: '流失高风险患者预警', icon: Activity, color: 'text-rose-500', isCustom: false,
+    text: '预警极橙大宁店第一季度流失高风险患者，并生成待办SOP'
+  },
+  { 
+    id: 'doctor_performance', title: '核心医生业绩环比分析', icon: PieChart, color: 'text-indigo-500', isCustom: false,
+    text: '分析极橙仙乐斯店张大夫今年的业绩环比数据'
+  },
 ];
 
 const RECENT_HISTORY = [
@@ -48,14 +60,7 @@ const RECENT_HISTORY = [
 export function Chat() {
   const [messages, setMessages] = useState<any[]>([]);
   const [prompts, setPrompts] = useState<any[]>(DEFAULT_PROMPTS);
-  const [showPromptManager, setShowPromptManager] = useState(false);
-  const [isSavingPrompt, setIsSavingPrompt] = useState(false);
-  const [newPromptTitle, setNewPromptTitle] = useState('');
-  const [activePrompt, setActivePrompt] = useState<any | null>(null);
-  const [draftFields, setDraftFields] = useState<{key: string, value: string}[]>([
-    { key: 'clinic', value: '极橙仙乐斯店' },
-    { key: 'time', value: '近7天' }
-  ]);
+  const [inputText, setInputText] = useState('');
   const [previewPpt, setPreviewPpt] = useState<any | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -63,42 +68,10 @@ export function Chat() {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  }, [messages, draftFields]);
+  }, [messages]);
 
   const handleSelectPrompt = (prompt: any) => {
-    setActivePrompt(prompt);
-    if (prompt.fields) {
-      setDraftFields(prompt.fields);
-    } else {
-      setDraftFields([
-        { key: 'clinic', value: '极橙仙乐斯店' },
-        { key: 'doctor', value: '全部医生' },
-        { key: 'time', value: '近30天' }
-      ]);
-    }
-  };
-
-  const handleSavePrompt = () => {
-    if (!newPromptTitle.trim()) return;
-    const newPrompt = {
-      id: `custom_${Date.now()}`,
-      title: newPromptTitle,
-      icon: Search,
-      color: 'text-[#1a73e8]',
-      isCustom: true,
-      fields: [...draftFields]
-    };
-    setPrompts(prev => [newPrompt, ...prev]);
-    setIsSavingPrompt(false);
-    setNewPromptTitle('');
-    setActivePrompt(newPrompt);
-  };
-
-  const handleDeletePrompt = (id: string) => {
-    setPrompts(prev => prev.filter(p => p.id !== id));
-    if (activePrompt?.id === id) {
-      setActivePrompt(null);
-    }
+    setInputText(prompt.text);
   };
 
   const handleViewHistory = (item: any) => {
@@ -118,24 +91,43 @@ export function Chat() {
     ]);
   };
 
-  const handleSend = () => {
+  const handleSend = (overrideText?: string) => {
+    const textToSend = overrideText || inputText;
+    if (!textToSend.trim()) return;
+
+    const query = textToSend.trim();
     const userMsg = {
       id: Date.now().toString(),
       role: 'user',
-      title: activePrompt ? activePrompt.title : '自定义条件分析',
-      fields: [...draftFields]
+      text: query,
     };
     
     setMessages(prev => [...prev, userMsg]);
-    setActivePrompt(null);
-    setDraftFields([
-      { key: 'clinic', value: '极橙仙乐斯店' },
-      { key: 'time', value: '近7天' }
-    ]);
+    setInputText('');
     
+    // Check for ambiguity
+    const isAmbiguous = query.length <= 6 || ['续卡', '分析', '数据', '报告', '复诊'].includes(query);
+    
+    if (isAmbiguous) {
+      const assistantId = Date.now().toString() + '-assistant';
+      setTimeout(() => {
+        setMessages(prev => [...prev, {
+          id: assistantId,
+          role: 'assistant',
+          text: `检测到您的提问“${query}”比较宽泛，语义有些模糊。您是否想分析以下具体内容？（点击即可查询）`,
+          options: [
+            `分析近期${query}下降的根本原因`,
+            `查看各门诊${query}数据对比`,
+            `生成提升${query}指标的待办SOP`
+          ]
+        }]);
+      }, 600);
+      return;
+    }
+
     // Determine if it should be a report based on fields or prompt title
-    const wantsReport = userMsg.title.includes('报告') || draftFields.some(f => f.value.includes('PPT') || f.value.includes('报告'));
-    const clinicName = draftFields.find(f => f.key === 'clinic')?.value || '所选门诊';
+    const wantsReport = query.includes('报告') || query.includes('PPT');
+    const clinicName = query.includes('大宁') ? '大宁店' : (query.includes('仙乐斯') ? '仙乐斯店' : '全部门诊');
 
     const assistantId = Date.now().toString() + '-assistant';
     setMessages(prev => [...prev, {
@@ -149,15 +141,32 @@ export function Chat() {
 
     setTimeout(() => {
       setMessages(prev => prev.map(m => m.id === assistantId ? {
-        ...m, thinking: [...m.thinking, { text: `正在提取 ${clinicName} 在指定时间段内的就诊及回访记录`, source: 'HIS - 就诊表' }]
+        ...m, thinking: [...m.thinking, { text: `正在提取 ${clinicName} 的相关就诊及回访记录`, source: 'HIS - 就诊表' }]
       } : m));
-    }, 1000);
+    }, 800);
+
+    setTimeout(() => {
+      setMessages(prev => prev.map(m => m.id === assistantId ? {
+        ...m, thinking: [...m.thinking, { 
+          text: `数据清洗完成，发现以下核心指标异常波动：`,
+          chart: {
+            type: 'bar',
+            data: [
+              { name: '第1周', value: 85, ideal: 90 },
+              { name: '第2周', value: 82, ideal: 90 },
+              { name: '第3周', value: 68, ideal: 90 },
+              { name: '第4周', value: 71, ideal: 90 }
+            ]
+          }
+        }]
+      } : m));
+    }, 1800);
 
     setTimeout(() => {
       setMessages(prev => prev.map(m => m.id === assistantId ? {
         ...m, 
         isAnalyzing: false,
-        text: `我已初步拉取了 **${clinicName}** 的数据。在分析过程中，我发现患者流失集中在两个显著方面：\n\n一是"候诊时间超过30分钟"引发的抱怨，二是"部分高客单价项目未提供灵活分期"。\n\n为了让产出物更符合您的执行需求，您希望我优先深挖并生成哪个方向的应对策略？`,
+        text: `我已初步拉取了 **${clinicName}** 的数据。在分析过程中，我发现指标异常主要集中在两个显著方面：\n\n一是"候诊时间超过30分钟"引发的抱怨，二是"部分高客单价项目未提供灵活分期"。\n\n为了让产出物更符合您的执行需求，您希望我优先深挖并生成哪个方向的应对策略？`,
         options: [
           '深挖"等待时间长"的服务体验问题', 
           '深挖"高单价转化低"的价格敏感问题', 
@@ -165,12 +174,18 @@ export function Chat() {
         ],
         meta: { wantsReport, clinicName }
       } : m));
-    }, 2500);
+    }, 3000);
   };
 
   const handleOptionSelect = (msgId: string, option: string, meta: any) => {
     // Disable options
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, options: undefined } : m));
+
+    // If there's no meta, it was an ambiguity clarification option
+    if (!meta) {
+      handleSend(option);
+      return;
+    }
 
     // Add user message
     setMessages(prev => [...prev, {
@@ -194,6 +209,23 @@ export function Chat() {
         ...m, thinking: [...m.thinking, { text: `交叉比对行业基准库，生成结构化策略...` }]
       } : m));
     }, 1000);
+
+    setTimeout(() => {
+      setMessages(prev => prev.map(m => m.id === newAstId ? {
+        ...m, thinking: [...m.thinking, { 
+          text: `策略执行后的目标留存率预估模型：`,
+          chart: {
+            type: 'line',
+            data: [
+              { name: '现状', rate: 12 },
+              { name: '实施1周', rate: 9 },
+              { name: '实施2周', rate: 6 },
+              { name: '实施1月', rate: 4 }
+            ]
+          }
+        }]
+      } : m));
+    }, 2000);
 
     setTimeout(() => {
       // Choose attachment type based on original intent (PPT vs Todo)
@@ -225,8 +257,51 @@ export function Chat() {
         text: `已根据您的指示完成了深入分析。\n\n结合您的选择，我发现只要我们在执行层面上解决这个卡点，预计能挽回约 15%-20% 的流失率。\n\n相关的执行方案已为您生成，请查阅下方附件。`,
         attachments
       } : m));
-    }, 2500);
+    }, 3500);
   };
+
+  const timelineItems = useMemo(() => {
+    const items: any[] = [];
+    
+    // Add current session items first (Newest at the top)
+    [...messages].reverse().forEach(msg => {
+      // Current session attachments (PPTs, Todos)
+      if (msg.attachments) {
+        // Reverse attachments if needed, but usually they are displayed together
+        [...msg.attachments].reverse().forEach((att: any) => {
+          items.push({
+            type: 'attachment',
+            isSession: true,
+            data: { ...att, date: '刚刚', _sessionAttachmentId: `session-att-${msg.id}-${att.id}` }
+          });
+        });
+      }
+      
+      // Current session charts
+      if (msg.thinking) {
+        [...msg.thinking].reverse().forEach((step: any, idx: number) => {
+          if (step.chart) {
+            items.push({
+              type: 'chart',
+              isSession: true,
+              data: { ...step, date: '刚刚', id: `session-chart-${msg.id}-${idx}` }
+            });
+          }
+        });
+      }
+    });
+
+    // Add static history items (Older)
+    RECENT_HISTORY.forEach(h => {
+      items.push({
+        type: 'attachment',
+        isSession: false,
+        data: h
+      });
+    });
+
+    return items;
+  }, [messages]);
 
   return (
     <div className="flex-1 flex h-full relative overflow-hidden">
@@ -243,7 +318,7 @@ export function Chat() {
             <div className="w-16 h-16 bg-gradient-to-br from-[#1a73e8] to-[#4285f4] rounded-[20px] flex items-center justify-center shadow-lg shadow-blue-500/20 mb-8">
               <Sparkles className="w-8 h-8 text-white" />
             </div>
-            <h2 className="text-2xl font-semibold text-gray-800 mb-3">您好，我是口腔诊所续卡助手</h2>
+            <h2 className="text-2xl font-semibold text-gray-800 mb-3">���好，我是口腔诊所续卡助手</h2>
             <p className="text-gray-500 mb-10 text-center text-[15px]">
               我可以帮您深度分析诊所运营数据、追踪患者复诊与续卡情况，并自动生成解决方案。
             </p>
@@ -255,31 +330,14 @@ export function Chat() {
                 <div key={msg.id} className="flex justify-end w-full">
                   <div className="bg-[#f4f7fc] border border-[#e8f0fe] rounded-[24px] rounded-tr-sm p-5 max-w-[85%] shadow-sm">
                     {msg.title && (
-                      <div className="text-[15px] font-medium text-gray-800 mb-3 flex items-center gap-2">
+                      <div className="text-[15px] font-medium text-gray-800 flex items-center gap-2">
                         <Activity className="w-4 h-4 text-[#1a73e8]" />
                         {msg.title}
                       </div>
                     )}
-                    {msg.text && !msg.title && (
-                      <div className="text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap">
+                    {msg.text && (
+                      <div className={clsx("text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap", msg.title && "mt-3")}>
                         {msg.text}
-                      </div>
-                    )}
-                    {msg.fields && msg.fields.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {msg.fields.map((field: any, idx: number) => {
-                          const def = AVAILABLE_FIELDS[field.key];
-                          const Icon = def?.icon;
-                          return (
-                            <div key={idx} className="flex items-center bg-white border border-gray-200 rounded-full px-3.5 py-1.5 text-[13px] text-gray-700 shadow-sm">
-                              <span className="text-gray-400 mr-2 flex items-center gap-1.5">
-                                {Icon && <Icon className="w-3.5 h-3.5" />}
-                                {def?.label || field.key}:
-                              </span> 
-                              <span className="font-medium text-[#1a73e8]">{field.value}</span>
-                            </div>
-                          )
-                        })}
                       </div>
                     )}
                   </div>
@@ -304,18 +362,49 @@ export function Chat() {
                             </span>
                             <ChevronDown className="w-4 h-4 transition-transform group-open:-rotate-180 text-gray-400" />
                           </summary>
-                          <div className="px-3.5 pb-3 pt-1 border-t border-gray-100/60 space-y-3">
+                          <div className="px-3.5 pb-3 pt-1 border-t border-gray-100/60 space-y-4">
                             {msg.thinking.map((step: any, idx: number) => (
-                              <div key={idx} className="text-[13px] text-gray-600 flex items-start gap-2">
-                                <span className="text-gray-400 mt-0.5 w-4 font-mono">{idx + 1}.</span>
-                                <div className="flex-1 leading-relaxed">
-                                  {step.text}
-                                  {step.source && (
-                                    <button className="inline-flex items-center gap-1 bg-[#e8f0fe] text-[#1a73e8] px-2 py-0.5 rounded-md border border-blue-100/50 hover:bg-blue-100 transition-colors ml-2 font-medium cursor-pointer">
-                                      <Database className="w-3 h-3" /> {step.source}
-                                    </button>
-                                  )}
+                              <div key={`${msg.id}-step-${idx}`} className="flex flex-col gap-2.5">
+                                <div className="text-[13px] text-gray-600 flex items-start gap-2">
+                                  <span className="text-gray-400 mt-0.5 w-4 font-mono shrink-0">{idx + 1}.</span>
+                                  <div className="flex-1 leading-relaxed">
+                                    {step.text}
+                                    {step.source && (
+                                      <button className="inline-flex items-center gap-1 bg-[#e8f0fe] text-[#1a73e8] px-2 py-0.5 rounded-md border border-blue-100/50 hover:bg-blue-100 transition-colors ml-2 font-medium cursor-pointer">
+                                        <Database className="w-3 h-3" /> {step.source}
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
+                                {step.chart && (
+                                  <div className="ml-6 mr-2 h-40 bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                                    {step.chart.type === 'bar' ? (
+                                      <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={step.chart.data} margin={{ top: 10, right: 10, left: -25, bottom: 0 }} id={`bar-${msg.id}-${idx}`}>
+                                          <CartesianGrid key="grid" strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                          <XAxis key="xaxis" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} dy={5} />
+                                          <YAxis key="yaxis" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
+                                          <RechartsTooltip key="tooltip" cursor={{ fill: '#f8fafd' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }} />
+                                          <Bar key="bar" dataKey="value" name="周留存率(%)" fill="#1a73e8" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                                            {step.chart.data.map((entry: any, index: number) => (
+                                              <Cell key={`cell-${msg.id}-${idx}-${index}`} fill={entry.value < 80 ? '#f43f5e' : '#1a73e8'} />
+                                            ))}
+                                          </Bar>
+                                        </BarChart>
+                                      </ResponsiveContainer>
+                                    ) : (
+                                      <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={step.chart.data} margin={{ top: 10, right: 10, left: -25, bottom: 0 }} id={`line-${msg.id}-${idx}`}>
+                                          <CartesianGrid key="grid" strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                          <XAxis key="xaxis" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} dy={5} />
+                                          <YAxis key="yaxis" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
+                                          <RechartsTooltip key="tooltip" cursor={{ stroke: '#e8f0fe', strokeWidth: 2 }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }} />
+                                          <Line key="line" type="monotone" dataKey="rate" name="预估流失率(%)" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
+                                        </LineChart>
+                                      </ResponsiveContainer>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -333,14 +422,15 @@ export function Chat() {
                       <div className="flex flex-col gap-2.5 pt-2">
                         {msg.options.map((opt: string, idx: number) => (
                           <button
-                            key={idx}
+                            key={`opt-${msg.id}-${idx}`}
                             onClick={() => handleOptionSelect(msg.id, opt, msg.meta)}
-                            className="text-left px-5 py-3 rounded-[16px] border border-blue-200 bg-[#f8fafd] text-[#1a73e8] text-[14px] hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer font-medium shadow-sm hover:shadow group w-fit pr-10 relative"
+                            className="text-left px-5 py-3 rounded-[16px] border border-blue-200 bg-[#f8fafd] text-[#1a73e8] text-[14px] hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer font-medium shadow-sm hover:shadow group w-full pr-10 relative flex items-center justify-between"
                           >
-                            <span className="flex items-center gap-2">
-                              <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">{String.fromCharCode(65 + idx)}</span>
-                              {opt}
+                            <span className="flex items-center gap-3">
+                              <span className="w-6 h-6 shrink-0 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">{String.fromCharCode(65 + idx)}</span>
+                              <span>{opt}</span>
                             </span>
+                            <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                           </button>
                         ))}
                       </div>
@@ -365,119 +455,48 @@ export function Chat() {
         <div className="max-w-4xl mx-auto w-full relative pointer-events-auto flex flex-col justify-end px-4">
           
           {/* Prompts as tags above input */}
-          <div className="mb-4 flex items-center gap-2.5 overflow-x-auto w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pb-1 relative pr-10">
-            {prompts.map(p => (
-              <button 
-                key={p.id}
-                onClick={() => handleSelectPrompt(p)}
-                className={clsx(
-                  "shrink-0 px-4 py-2 bg-white/90 backdrop-blur-md border border-gray-200/80 rounded-full text-[13px] font-medium text-gray-700 hover:border-blue-300 transition-all flex items-center gap-2 shadow-sm hover:shadow-md hover:bg-white cursor-pointer",
-                  activePrompt?.id === p.id ? "border-[#1a73e8] text-[#1a73e8] bg-blue-50/50" : "hover:text-[#1a73e8]"
-                )}
-              >
-                <p.icon className={clsx("w-3.5 h-3.5", p.color)} />
-                {p.title}
-              </button>
-            ))}
-            
-            <div className="absolute right-0 top-0 bottom-1 w-12 bg-gradient-to-l from-white/95 via-white/80 to-transparent flex items-center justify-end z-10 pointer-events-none">
-              <button 
-                onClick={() => setShowPromptManager(true)}
-                className="p-1.5 rounded-full bg-white border border-gray-200 shadow-sm hover:border-blue-300 hover:text-[#1a73e8] text-gray-400 transition-colors cursor-pointer pointer-events-auto mr-1"
-                title="管理建议"
-              >
-                <Settings2 className="w-4 h-4" />
-              </button>
+          <div className="mb-4 relative w-full">
+            <div className="flex items-center gap-2.5 overflow-x-auto w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pb-1 pr-12">
+              {prompts.map(p => (
+                <button 
+                  key={p.id}
+                  onClick={() => handleSelectPrompt(p)}
+                  className={clsx(
+                    "shrink-0 px-4 py-2 bg-white/90 backdrop-blur-md border border-gray-200/80 rounded-full text-[13px] font-medium text-gray-700 hover:border-blue-300 transition-all flex items-center gap-2 shadow-sm hover:shadow-md hover:bg-white cursor-pointer",
+                    "hover:text-[#1a73e8]"
+                  )}
+                >
+                  <p.icon className={clsx("w-3.5 h-3.5", p.color)} />
+                  {p.title}
+                </button>
+              ))}
             </div>
+            
           </div>
 
           <div 
-            className="bg-white border border-gray-200 shadow-[0_4px_20px_rgba(0,0,0,0.06)] rounded-[28px] p-6 relative z-10 w-full transition-shadow hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]"
+            className="bg-white border border-gray-200 shadow-[0_4px_20px_rgba(0,0,0,0.06)] rounded-[20px] p-2 relative z-10 w-full transition-shadow hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] flex items-end gap-2"
           >
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2 text-[#1a73e8] font-medium text-[15px]">
-                {activePrompt ? (
-                  <><activePrompt.icon className="w-5 h-5" /> {activePrompt.title}</>
-                ) : (
-                  <><Search className="w-5 h-5" /> 自定义分析条件</>
-                )}
-              </div>
-              {activePrompt && (
-                <button onClick={() => setActivePrompt(null)} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer text-xs flex items-center gap-1">
-                  <X className="w-3.5 h-3.5" /> 清除建议
-                </button>
-              )}
-            </div>
-            
-            <div className="flex flex-wrap gap-3 mb-6">
-                  {draftFields.map((field, index) => (
-                    <FieldPill 
-                      key={index} 
-                      field={field} 
-                      onRemove={() => {
-                        const newFields = [...draftFields];
-                        newFields.splice(index, 1);
-                        setDraftFields(newFields);
-                        setActivePrompt(null);
-                      }}
-                      onChange={(newVal: string) => {
-                        const newFields = [...draftFields];
-                        newFields[index].value = newVal;
-                        setDraftFields(newFields);
-                        setActivePrompt(null);
-                      }} 
-                    />
-                  ))}
-                  
-                  {/* Add Field Button */}
-                  {Object.keys(AVAILABLE_FIELDS).filter(k => !draftFields.find(f => f.key === k)).length > 0 && (
-                    <AddDropdown 
-                      availableKeys={Object.keys(AVAILABLE_FIELDS).filter(k => !draftFields.find(f => f.key === k))}
-                      onAdd={(key: string, val: string) => {
-                        setDraftFields([...draftFields, { key, value: val }]);
-                        setActivePrompt(null);
-                      }}
-                    />
-                  )}
-                </div>
-
-            <div className="flex justify-between items-center w-full">
-              <div className="flex-1">
-                {!activePrompt && draftFields.length > 0 && (
-                  isSavingPrompt ? (
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="text" 
-                        autoFocus
-                        value={newPromptTitle}
-                        onChange={e => setNewPromptTitle(e.target.value)}
-                        placeholder="输入配置名称..." 
-                        className="text-[14px] border border-gray-200 rounded-[12px] px-3 py-1.5 w-48 focus:outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all bg-gray-50/50"
-                        onKeyDown={e => e.key === 'Enter' && handleSavePrompt()}
-                      />
-                      <button onClick={handleSavePrompt} className="text-[13px] font-medium text-white bg-[#1a73e8] px-3.5 py-1.5 rounded-[10px] hover:bg-blue-600 transition-colors shadow-sm cursor-pointer">保存</button>
-                      <button onClick={() => setIsSavingPrompt(false)} className="text-[13px] font-medium text-gray-500 hover:text-gray-700 px-2 py-1.5 transition-colors cursor-pointer">取消</button>
-                    </div>
-                  ) : (
-                    <button 
-                      onClick={() => setIsSavingPrompt(true)}
-                      className="text-[13px] text-gray-500 hover:text-[#1a73e8] flex items-center gap-1.5 transition-colors font-medium px-2 py-1 rounded-lg hover:bg-gray-50 cursor-pointer"
-                    >
-                      <Bookmark className="w-3.5 h-3.5" /> 保存为常用配置
-                    </button>
-                  )
-                )}
-              </div>
-              <div className="flex justify-end">
-                <button 
-                  onClick={handleSend} 
-                  disabled={draftFields.length === 0}
-                  className="bg-[#1a73e8] hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-[#1a73e8] text-white px-7 py-3 rounded-full text-[15px] font-medium transition-colors flex items-center gap-2 shadow-sm shadow-blue-500/20 cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4" /> 开始智能分析
-                </button>
-              </div>
-            </div>
+            <textarea
+              value={inputText}
+              onChange={e => setInputText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="直接输入您的分析需求..."
+              className="flex-1 bg-transparent border-none px-4 py-3 text-[15px] text-gray-800 placeholder-gray-400 focus:outline-none resize-none min-h-[48px] max-h-[120px]"
+              rows={1}
+            />
+            <button 
+              onClick={() => handleSend()} 
+              disabled={!inputText.trim()}
+              className="bg-[#1a73e8] hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-[#1a73e8] text-white w-[48px] h-[48px] rounded-xl flex items-center justify-center transition-colors cursor-pointer shrink-0"
+            >
+              <Send className="w-5 h-5 ml-0.5" />
+            </button>
           </div>
         </div>
       </div>
@@ -500,16 +519,16 @@ export function Chat() {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="absolute top-0 right-0 bottom-0 w-[560px] bg-white border-l border-gray-200 shadow-2xl z-30 flex flex-col"
+            className="absolute top-0 right-0 bottom-0 w-full sm:w-[560px] bg-white border-l border-gray-200 shadow-2xl z-30 flex flex-col"
           >
-            <div className="flex items-center justify-between p-6 border-b border-gray-100 shrink-0">
-              <div className="flex items-center gap-3 overflow-hidden">
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-100 shrink-0 gap-4">
+              <div className="flex items-center gap-3 w-full sm:w-auto overflow-hidden">
                 <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
                   <Presentation className="w-5 h-5" />
                 </div>
-                <div className="overflow-hidden">
-                  <h3 className="text-base font-semibold text-gray-800 truncate">{previewPpt.title}</h3>
-                  <div className="text-sm text-gray-500 mt-0.5">{previewPpt.date} · {previewPpt.size}</div>
+                <div className="overflow-hidden flex-1">
+                  <h3 className="text-base font-semibold text-gray-800 truncate" title={previewPpt.title}>{previewPpt.title}</h3>
+                  <div className="text-sm text-gray-500 mt-0.5 truncate">{previewPpt.date} · {previewPpt.size}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -571,230 +590,186 @@ export function Chat() {
       )}
     </AnimatePresence>
 
-    {/* Right History Panel - always visible */}
-    <div className="w-[280px] border-l border-gray-100 bg-[#f8fafd]/30 flex flex-col shrink-0 z-10 transition-all duration-300 ease-in-out">
-      <div className="p-5 border-b border-gray-100/60 bg-white/50 backdrop-blur-sm sticky top-0">
-        <h3 className="text-[14px] font-medium text-gray-800 flex items-center gap-2">
-          <Clock className="w-4 h-4 text-[#1a73e8]" />
-          历史生成文件
+    {/* Right History Panel - always visible on desktop, hidden on small screens */}
+    <div className="hidden md:flex w-[320px] border-l border-gray-200/80 bg-gray-50 flex-col shrink-0 z-10 transition-all duration-300 ease-in-out shadow-[-4px_0_24px_rgba(0,0,0,0.02)]">
+      <div className="h-[72px] px-5 border-b border-gray-200/80 bg-white/80 backdrop-blur-md shrink-0 sticky top-0 z-20 shadow-sm flex items-center justify-between">
+        <h3 className="text-[15px] font-medium text-gray-800 flex items-center gap-2">
+          <Activity className="w-4 h-4 text-[#1a73e8]" />
+          工作台
         </h3>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {RECENT_HISTORY.map(history => {
-          if (history.type === 'todo') {
+      <div className="flex-1 overflow-y-auto p-4 pt-6 relative">
+        <div className="absolute top-8 bottom-0 left-[23px] w-px bg-gray-200/80 z-0"></div>
+        <div className="space-y-6 relative z-10">
+          {timelineItems.map((item, index) => {
+            const isChart = item.type === 'chart';
+            const isTodo = item.type === 'attachment' && item.data.type === 'todo';
+            const history = item.data;
+
             return (
-              <div key={history.id} className="bg-white rounded-[20px] p-4 border border-gray-100 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
-                <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-50">
-                  <div className="w-8 h-8 rounded-xl bg-green-50 text-green-600 flex items-center justify-center shrink-0">
-                    <CheckSquare className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    <div className="text-[13px] font-medium text-gray-800 truncate">{history.title}</div>
-                    <div className="text-[11px] text-gray-400">{history.date}</div>
-                  </div>
+              <div key={isChart ? history.id : (history._sessionAttachmentId || history.id)} className="relative pl-8">
+                {/* Timeline Dot */}
+                <div className="absolute left-[3px] top-1 w-2 h-2 rounded-full bg-blue-400 ring-4 ring-[#f9fafb] z-10"></div>
+                
+                {/* Time Label */}
+                <div className="mb-2 text-[11px] font-medium text-gray-500 flex items-center gap-1.5">
+                  <Clock className="w-3 h-3" />
+                  {history.date}
                 </div>
-                <div className="space-y-2.5">
-                  {history.preview.map((task: string, i: number) => (
-                    <div key={i} className="flex items-start gap-2.5 group/task cursor-pointer">
-                      <div className="w-4 h-4 rounded border border-gray-300 mt-0.5 shrink-0 bg-white group-hover/task:border-green-400 transition-colors" />
-                      <span className="text-[12px] text-gray-600 leading-snug group-hover/task:text-gray-900 transition-colors">
-                        {task.replace('[ ] ', '')}
-                      </span>
+
+                {isChart ? (
+                  <div className="bg-white rounded-[20px] p-4 border border-gray-200/60 shadow-sm hover:shadow-md transition-all">
+                    <div className="text-[13px] font-medium text-gray-800 mb-3 leading-snug flex items-center gap-1.5">
+                      <PieChart className="w-3.5 h-3.5 text-blue-500" />
+                      {history.text}
                     </div>
-                  ))}
-                </div>
+                    <div className="h-40 w-full">
+                      {history.chart.type === 'bar' ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={history.chart.data} margin={{ top: 10, right: 10, left: -25, bottom: 0 }} id={`side-bar-${index}`}>
+                            <CartesianGrid key="grid" strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                            <XAxis key="xaxis" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} dy={5} />
+                            <YAxis key="yaxis" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
+                            <RechartsTooltip key="tooltip" cursor={{ fill: '#f8fafd' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }} />
+                            <Bar key="bar" dataKey="value" name="周留存率(%)" fill="#1a73e8" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                              {history.chart.data.map((entry: any, i: number) => (
+                                <Cell key={`cell-side-${index}-${i}`} fill={entry.value < 80 ? '#f43f5e' : '#1a73e8'} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={history.chart.data} margin={{ top: 10, right: 10, left: -25, bottom: 0 }} id={`side-line-${index}`}>
+                            <CartesianGrid key="grid" strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                            <XAxis key="xaxis" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} dy={5} />
+                            <YAxis key="yaxis" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
+                            <RechartsTooltip key="tooltip" cursor={{ stroke: '#e8f0fe', strokeWidth: 2 }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }} />
+                            <Line key="line" type="monotone" dataKey="rate" name="预估流失率(%)" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+                  </div>
+                ) : isTodo ? (
+                  <SidebarTodoCard history={history} />
+                ) : (
+                  <div className="bg-white rounded-[20px] border border-gray-200/60 shadow-sm hover:shadow-md hover:border-blue-200 flex flex-col group overflow-hidden transition-all">
+                    <div 
+                      onClick={() => handleViewHistory(history)}
+                      className="flex items-start gap-3 p-4 cursor-pointer hover:bg-gray-50/50 transition-colors"
+                    >
+                      <div className={clsx("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105", history.color, 'bg-orange-50')}>
+                        <history.icon className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 overflow-hidden pt-0.5">
+                        <div className="text-[13px] font-medium text-gray-800 line-clamp-2 leading-snug group-hover:text-[#1a73e8] transition-colors">{history.title}</div>
+                        <div className="text-[11px] text-gray-400 mt-1.5 flex items-center gap-2">
+                          <span className="text-[10px] bg-gray-50 px-1.5 py-0.5 rounded text-gray-500">{history.size}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 pb-3">
+                      <button 
+                        onClick={() => handleViewHistory(history)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[12px] font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 hover:text-gray-900 transition-colors cursor-pointer"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> 预览
+                      </button>
+                      <button 
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[12px] font-medium text-[#1a73e8] bg-[#e8f0fe] hover:bg-blue-100 transition-colors cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" /> 下载
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
-          }
-
-          return (
-            <div 
-              key={history.id} 
-              className="bg-white rounded-[20px] border border-gray-100 shadow-[0_2px_8px_rgba(0,0,0,0.02)] flex flex-col group overflow-hidden"
-            >
-              <div 
-                onClick={() => handleViewHistory(history)}
-                className="flex items-start gap-3 p-4 cursor-pointer hover:bg-gray-50/50 transition-colors"
-              >
-                <div className={clsx("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105", history.color, history.type === 'ppt' ? 'bg-orange-50' : 'bg-green-50')}>
-                  <history.icon className="w-5 h-5" />
-                </div>
-                <div className="flex-1 overflow-hidden pt-0.5">
-                  <div className="text-[13px] font-medium text-gray-800 line-clamp-2 leading-snug group-hover:text-[#1a73e8] transition-colors">{history.title}</div>
-                  <div className="text-[11px] text-gray-400 mt-1.5 flex items-center gap-2">
-                    <span>{history.date}</span>
-                    <span className="text-[10px] bg-gray-50 px-1.5 py-0.5 rounded text-gray-500">{history.size}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 px-3 pb-3">
-                <button 
-                  onClick={() => handleViewHistory(history)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[12px] font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 hover:text-gray-900 transition-colors cursor-pointer"
-                >
-                  <Eye className="w-3.5 h-3.5" /> 预览
-                </button>
-                <button 
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[12px] font-medium text-[#1a73e8] bg-[#e8f0fe] hover:bg-blue-100 transition-colors cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" /> 下载
-                </button>
-              </div>
-            </div>
-          );
-        })}
+          })}
+        </div>
       </div>
     </div>
 
-    {/* Prompt Manager Modal */}
-    <AnimatePresence>
-      {showPromptManager && (
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-gray-900/20 backdrop-blur-[2px] z-50 flex items-center justify-center p-4"
-          onClick={() => setShowPromptManager(false)}
-        >
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            onClick={e => e.stopPropagation()}
-            className="bg-white rounded-[24px] shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]"
-          >
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-medium text-gray-800 flex items-center gap-2">
-                <Settings2 className="w-5 h-5 text-gray-400" />
-                管理常用条件配置
-              </h3>
-              <button onClick={() => setShowPromptManager(false)} className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 transition-colors cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-2 overflow-y-auto">
-              {prompts.length === 0 ? (
-                <div className="py-8 text-center text-gray-400 text-sm">暂无常用配置</div>
-              ) : (
-                <div className="space-y-1">
-                  {prompts.map(p => (
-                    <div key={p.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl group transition-colors">
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <div className={clsx("w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-white shadow-sm border border-gray-100", p.color)}>
-                          <p.icon className="w-4 h-4" />
-                        </div>
-                        <div className="truncate">
-                          <div className="text-[14px] font-medium text-gray-700 truncate">{p.title}</div>
-                          {p.isCustom && <div className="text-[11px] text-gray-400 mt-0.5">自定义条件</div>}
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => handleDeletePrompt(p.id)}
-                        className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all cursor-pointer shrink-0"
-                        title="删除"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="p-4 border-t border-gray-100 bg-gray-50/50">
-              <button 
-                onClick={() => setShowPromptManager(false)}
-                className="w-full py-2.5 bg-white border border-gray-200 rounded-xl text-[14px] font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
-              >
-                完成
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+
 
     </div>
   );
 }
 
-function FieldPill({ field, onRemove, onChange }: any) {
-  const [isOpen, setIsOpen] = useState(false);
-  const def = AVAILABLE_FIELDS[field.key];
-  if (!def) return null;
+
+
+
+
+function SidebarTodoCard({ history }: { history: any }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (history.preview) {
+      const textToCopy = history.preview.map((t: string) => t.replace('[ ] ', '')).join('\n');
+      
+      const copyWithFallback = () => {
+        const textArea = document.createElement("textarea");
+        textArea.value = textToCopy;
+        textArea.style.position = "absolute";
+        textArea.style.left = "-999999px";
+        document.body.prepend(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+        } catch (error) {
+          console.error(error);
+        } finally {
+          textArea.remove();
+        }
+      };
+
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(textToCopy).catch((err) => {
+          console.warn('Clipboard API blocked, using fallback.', err);
+          copyWithFallback();
+        });
+      } else {
+        copyWithFallback();
+      }
+      
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
-    <div className="relative">
-      <div className="flex items-center bg-[#f8fafd] border border-gray-200 hover:border-blue-200 hover:bg-white rounded-full pl-3.5 pr-1.5 py-1.5 shadow-sm transition-all group">
-        <span className="text-[13px] text-gray-500 mr-2 flex items-center gap-1.5">
-          <def.icon className="w-3.5 h-3.5" />
-          {def.label}:
-        </span>
+    <div className="bg-white rounded-[20px] p-4 border border-gray-200/60 shadow-sm hover:shadow-md hover:border-blue-200 transition-all">
+      <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-50">
+        <div className="flex items-center gap-2 overflow-hidden flex-1">
+          <div className="w-8 h-8 rounded-xl bg-green-50 text-green-600 flex items-center justify-center shrink-0">
+            <CheckSquare className="w-4 h-4" />
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <div className="text-[13px] font-medium text-gray-800 truncate">{history.title}</div>
+          </div>
+        </div>
         <button 
-          onClick={() => setIsOpen(!isOpen)} 
-          className="text-[14px] font-medium text-[#1a73e8] hover:text-blue-800 mr-2 outline-none cursor-pointer flex items-center gap-1"
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium text-green-700 bg-white border border-green-200 hover:bg-green-50 rounded-full transition-colors cursor-pointer shrink-0"
         >
-          {field.value}
-          <ChevronDown className="w-3 h-3 opacity-50" />
-        </button>
-        <button onClick={onRemove} className="w-6 h-6 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-red-500 transition-colors cursor-pointer">
-          <X className="w-3.5 h-3.5" />
+          {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? '已复制' : '复制'}
         </button>
       </div>
-      
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-20" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-100 rounded-[20px] shadow-xl shadow-black/5 z-30 py-2 overflow-hidden transform origin-top animate-in fade-in zoom-in-95 duration-200">
-            {def.options.map((opt: string) => (
-              <button 
-                key={opt} 
-                onClick={() => { onChange(opt); setIsOpen(false); }}
-                className="w-full text-left px-5 py-3 text-[14px] text-gray-700 hover:bg-[#f4f7fc] hover:text-[#1a73e8] transition-colors flex items-center justify-between cursor-pointer group-btn"
-              >
-                {opt}
-                {field.value === opt && <CheckCircle2 className="w-4 h-4 text-[#1a73e8]" />}
-              </button>
-            ))}
+      <div className="space-y-3.5">
+        {history.preview.map((task: string, i: number) => (
+          <div key={i} className="flex items-start gap-2.5 group/task cursor-pointer">
+            <div className="mt-0.5 w-4 h-4 rounded border border-gray-300 shrink-0 bg-white group-hover/task:border-green-400 transition-colors flex items-center justify-center">
+            </div>
+            <span className="text-[12px] text-gray-600 leading-[1.4] group-hover/task:text-gray-900 transition-colors flex-1">
+              {task.replace('[ ] ', '')}
+            </span>
           </div>
-        </>
-      )}
+        ))}
+      </div>
     </div>
-  )
-}
-
-function AddDropdown({ availableKeys, onAdd }: any) {
-  const [isOpen, setIsOpen] = useState(false);
-  
-  return (
-    <div className="relative">
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-dashed border-gray-300 text-[14px] text-gray-500 hover:border-[#1a73e8] hover:text-[#1a73e8] transition-colors bg-white cursor-pointer"
-      >
-        <Plus className="w-4 h-4" /> 添加条件
-      </button>
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-20" onClick={() => setIsOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-2 w-48 bg-white border border-gray-100 rounded-[20px] shadow-xl shadow-black/5 z-30 py-2 transform origin-bottom animate-in fade-in zoom-in-95 duration-200">
-            {availableKeys.map((k: string) => {
-              const def = AVAILABLE_FIELDS[k];
-              return (
-                <button 
-                  key={k}
-                  onClick={() => { onAdd(k, def.options[0]); setIsOpen(false); }}
-                  className="w-full text-left px-5 py-3 text-[14px] text-gray-700 hover:bg-[#f4f7fc] hover:text-[#1a73e8] transition-colors flex items-center gap-3 cursor-pointer"
-                >
-                  <def.icon className="w-4 h-4 text-gray-400" />
-                  {def.label}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
-  )
+  );
 }
 
 function AttachmentCard({ att }: { att: any }) {
@@ -805,30 +780,33 @@ function AttachmentCard({ att }: { att: any }) {
     if (att.preview) {
       const textToCopy = att.preview.map((t: string) => t.replace('[ ] ', '')).join('\n');
       
-      try {
-        if (navigator.clipboard && window.isSecureContext) {
-          navigator.clipboard.writeText(textToCopy);
-        } else {
-          // Fallback for restricted iframes
-          const textArea = document.createElement("textarea");
-          textArea.value = textToCopy;
-          textArea.style.position = "absolute";
-          textArea.style.left = "-999999px";
-          document.body.prepend(textArea);
-          textArea.select();
-          try {
-            document.execCommand('copy');
-          } catch (error) {
-            console.error(error);
-          } finally {
-            textArea.remove();
-          }
+      const copyWithFallback = () => {
+        const textArea = document.createElement("textarea");
+        textArea.value = textToCopy;
+        textArea.style.position = "absolute";
+        textArea.style.left = "-999999px";
+        document.body.prepend(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+        } catch (error) {
+          console.error(error);
+        } finally {
+          textArea.remove();
         }
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch (err) {
-        console.error('Failed to copy text: ', err);
+      };
+
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(textToCopy).catch((err) => {
+          console.warn('Clipboard API blocked, using fallback.', err);
+          copyWithFallback();
+        });
+      } else {
+        copyWithFallback();
       }
+      
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -848,11 +826,11 @@ function AttachmentCard({ att }: { att: any }) {
             {copied ? '已复制' : '复制待办'}
           </button>
         </div>
-        <div className="p-5 space-y-3.5">
+        <div className="p-5 space-y-4">
           {att.preview.map((task: string, i: number) => (
             <div key={i} className="flex items-start gap-3 group">
-              <div className="w-5 h-5 rounded border border-gray-300 mt-0.5 flex-shrink-0 bg-white flex items-center justify-center group-hover:border-green-400 transition-colors shadow-sm" />
-              <span className="text-[14px] text-gray-700 leading-relaxed select-text">{task.replace('[ ] ', '')}</span>
+              <div className="mt-[3px] w-5 h-5 rounded border border-gray-300 flex-shrink-0 bg-white flex items-center justify-center group-hover:border-green-400 transition-colors shadow-sm" />
+              <span className="text-[14px] text-gray-700 leading-relaxed select-text flex-1">{task.replace('[ ] ', '')}</span>
             </div>
           ))}
         </div>

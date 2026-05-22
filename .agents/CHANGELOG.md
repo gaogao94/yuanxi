@@ -510,3 +510,24 @@
 - 遗留问题：
   - `MEDGRAPH_JSON_PATH` 是否长期保留为离线 fallback 仍待定
   - 指标口径在图谱中的完整度仍待业务确认
+
+## [2026-05-22 09:11] 启动 app/web 前端项目
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `app/web/package-lock.json`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：为 `app/web` 安装 npm 依赖并启动 Vite 开发服务器，确认项目可在本地访问；安装过程中因 npm 源超时，改用更长超时和重试参数后成功完成安装
+- 前端影响：本地开发环境已就绪，可通过 `http://localhost:5175/` 访问页面
+- 后端影响：无
+- 接口影响：无
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `npm install --registry=https://registry.npmjs.org --fetch-timeout=600000 --fetch-retries=5 --fetch-retry-maxtimeout=120000`：通过
+  - `npm run dev -- --host 0.0.0.0`：通过
+  - `git status --short`：通过
+- 遗留问题：
+  - 首次安装依赖受网络波动影响明显，后续如再次超时可继续使用延长超时参数

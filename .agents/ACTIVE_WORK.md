@@ -548,3 +548,25 @@
 - 验证结果：专项图谱工具复用测试通过；49 个测试通过；编译通过；真实 DeepSeek + Graph API 本地流程输出 `nebula_graph_query` 能力合同；空白检查通过
 - 未验证项：未在 PyCharm UI 内点击运行；命令行已验证同一脚本
 - 风险或假设：Agent2 默认文本输出保持可读摘要；Agent1 必须传 `output_format=json` 才能获得结构化图谱数据
+
+## [2026-05-22 09:11] Agent: codex-gpt5
+
+- 状态：已完成
+- 任务：启动 `app/web` 前端项目并确认本地开发服务可访问
+- 实际修改文件：
+  - `app/web/package-lock.json`
+  - `.agents/ACTIVE_WORK.md`
+- 前端影响：为 `app/web` 安装 npm 依赖并启动 Vite 开发服务，本地可通过浏览器访问页面
+- 后端影响：无
+- 接口影响：无
+- 数据库影响：无
+- 配置影响：无
+- 验证命令：
+  - `npm install --registry=https://registry.npmjs.org --fetch-timeout=600000 --fetch-retries=5 --fetch-retry-maxtimeout=120000`
+  - `npm run dev -- --host 0.0.0.0`
+  - `git status --short`
+- 验证结果：依赖安装完成，生成 `package-lock.json`；Vite 成功启动在 `http://localhost:5175/`；工作区新增 `app/web/node_modules/` 与 `app/web/package-lock.json`
+- 未验证项：未执行页面功能性手测；仅确认开发服务器成功启动并可访问
+- 风险或假设：
+  - 当前网络访问 npm 源较慢，首次安装需要较长时间并已通过延长超时完成
+  - `node_modules` 为本地依赖目录，通常不纳入版本管理
