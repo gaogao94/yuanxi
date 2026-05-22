@@ -1,4 +1,9 @@
-"""Knowledge graph query tool with local JSON and NebulaGraph fallbacks."""
+"""Shared NebulaGraph query tool for Agent1 and Agent2.
+
+Agent2 uses this as its normal CrewAI tool. Agent1 uses the same tool with
+``output_format="json"`` so the deterministic clarification core can consume
+schema, vertices, and edges without maintaining a separate graph tool module.
+"""
 
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ if TYPE_CHECKING:
 
 
 class NebulaGraphQueryInput(BaseModel):
+    question: str = Field(default="", description="Natural-language query or read-only nGQL statement.")
     query: str = Field(
         default="",
         description=(
@@ -35,14 +41,18 @@ class NebulaGraphQueryInput(BaseModel):
     keyword: str = Field(default="", description="Business keyword extracted from the user question.")
     user_question: str = Field(default="", description="Original user question for graph lookup context.")
     purpose: str = Field(default="clarification", description="Tool usage purpose, such as clarification.")
+    tag: str = Field(default="", description="Optional vertex tag for Agent2 queries.")
+    edge_type: str = Field(default="", description="Optional edge type for Agent2 queries.")
+    limit: int = Field(default=50, description="Maximum rows to fetch for schema samples.")
+    output_format: str = Field(default="text", description="Use json for Agent1 structured graph data.")
 
 
 class NebulaGraphQueryTool(BaseTool):
-    name: str = "knowledge_graph_query"
+    name: str = "nebula_graph_query"
     description: str = (
-        "Query the medical/business knowledge graph and return raw graph JSON data "
-        "including space, version, schema, vertices, and edges. In local development, "
-        "set MEDGRAPH_JSON_PATH to return the same structure from a JSON export."
+        "Query the medical/business NebulaGraph knowledge graph. Agent2 can use it "
+        "directly for graph lookup; Agent1 passes output_format=json to receive "
+        "structured graph data including space, schema, vertices, and edges."
     )
     args_schema: Type[BaseModel] = NebulaGraphQueryInput
 
@@ -73,45 +83,76 @@ class NebulaGraphQueryTool(BaseTool):
 
     def _run(
         self,
+        question: str = "",
         query: str = "",
         keyword: str = "",
         user_question: str = "",
         purpose: str = "clarification",
+        tag: str = "",
+        edge_type: str = "",
+        limit: int = 50,
+        output_format: str = "text",
     ) -> str:
-        query_text = query or keyword or user_question
+        limit = min(max(int(limit), 1), 500)
+        query_text = query or question or keyword or user_question or tag or edge_type
+        graph = self._run_structured_graph(
+            query_text,
+            keyword,
+            user_question,
+            purpose,
+            tag,
+            edge_type,
+            limit,
+        )
+        if output_format.strip().lower() in {"json", "structured"}:
+            return json.dumps(graph, ensure_ascii=False)
+        return self._format_text_result(graph, query_text, limit)
+
+    def _run_structured_graph(
+        self,
+        query_text: str,
+        keyword: str,
+        user_question: str,
+        purpose: str,
+        tag: str = "",
+        edge_type: str = "",
+        limit: int = 50,
+    ) -> dict[str, Any]:
         api_error = ""
         strict_graph_api = self._strict_graph_api_enabled()
         if strict_graph_api and not os.getenv("GRAPH_API_KEY", "").strip():
-            return json.dumps(
-                self._error_graph(
-                    query_text,
-                    "GRAPH_API_KEY is required when GRAPH_API_STRICT is enabled.",
-                ),
-                ensure_ascii=False,
+            return self._error_graph(
+                query_text,
+                "GRAPH_API_KEY is required when GRAPH_API_STRICT is enabled.",
             )
         try:
-            api_graph = self._run_graph_api(query_text, keyword, user_question, purpose)
+            api_graph = self._run_graph_api(
+                query_text,
+                keyword,
+                user_question,
+                purpose,
+                tag,
+                edge_type,
+                limit,
+            )
             if api_graph is not None:
-                return json.dumps(api_graph, ensure_ascii=False)
+                return api_graph
         except Exception as exc:
             api_error = str(exc)
             if strict_graph_api:
-                return json.dumps(self._error_graph(query_text, api_error), ensure_ascii=False)
+                return self._error_graph(query_text, api_error)
 
         if strict_graph_api:
-            return json.dumps(
-                self._error_graph(
-                    query_text,
-                    api_error or "Graph API did not return graph data.",
-                ),
-                ensure_ascii=False,
+            return self._error_graph(
+                query_text,
+                api_error or "Graph API did not return graph data.",
             )
 
         local_json_path = os.getenv("MEDGRAPH_JSON_PATH")
         if local_json_path:
             local_graph = self._load_local_graph(local_json_path)
             if local_graph is not None:
-                return json.dumps(local_graph, ensure_ascii=False)
+                return local_graph
 
         try:
             pool = self._get_pool()
@@ -124,29 +165,61 @@ class NebulaGraphQueryTool(BaseTool):
                 result = session.execute(query_text)
                 if result and result.is_succeeded():
                     rows = result.rows()
-                    return json.dumps(
-                        {
-                            "space": nebula_space,
-                            "version": "nebula",
-                            "schema": {},
-                            "data": {
-                                "vertices": [],
-                                "edges": [],
-                                "rows": [str(row) for row in rows],
-                            },
-                            "query": query_text,
+                    return {
+                        "space": nebula_space,
+                        "version": "nebula",
+                        "schema": {},
+                        "data": {
+                            "vertices": [],
+                            "edges": [],
+                            "rows": [str(row) for row in rows],
                         },
-                        ensure_ascii=False,
-                    )
+                        "query": query_text,
+                    }
 
                 error_message = result.error_msg() if result else "未知错误"
-                return json.dumps(
-                    self._fallback_graph(query_text, error_message),
-                    ensure_ascii=False,
-                )
+                return self._fallback_graph(query_text, error_message)
         except Exception as exc:
             fallback_error = api_error or str(exc)
-            return json.dumps(self._fallback_graph(query_text, fallback_error), ensure_ascii=False)
+            return self._fallback_graph(query_text, fallback_error)
+
+    def _format_text_result(
+        self,
+        graph: dict[str, Any],
+        query_text: str,
+        limit: int,
+    ) -> str:
+        if graph.get("status") == "error":
+            return f"知识图谱查询失败: {graph.get('error', 'unknown error')}"
+
+        schema = graph.get("schema", {})
+        tags = list((schema.get("tags") or {}).keys())
+        edges = list((schema.get("edges") or {}).keys())
+        data = graph.get("data", {})
+        sample_edges = data.get("edges", [])
+        rows = data.get("rows", [])
+
+        lines = [
+            f"## NebulaGraph 查询结果（空间: {graph.get('space', 'unknown')}）",
+            "",
+            f"- 查询: {query_text or graph.get('query', '')}",
+            f"- 来源: {graph.get('source', graph.get('version', 'unknown'))}",
+        ]
+        if tags:
+            lines.append(f"- 可用节点类型: {', '.join(map(str, tags[:limit]))}")
+        if edges:
+            lines.append(f"- 可用关系类型: {', '.join(map(str, edges[:limit]))}")
+        if sample_edges:
+            lines.append("- 命中关系样例:")
+            for item in sample_edges[: min(limit, 10)]:
+                lines.append(f"  - {item}")
+        if rows:
+            lines.append("- 查询行样例:")
+            for item in rows[: min(limit, 10)]:
+                lines.append(f"  - {item}")
+        if graph.get("error"):
+            lines.append(f"- 降级原因: {graph['error']}")
+        return "\n".join(lines)
 
     def _run_graph_api(
         self,
@@ -154,6 +227,9 @@ class NebulaGraphQueryTool(BaseTool):
         keyword: str,
         user_question: str,
         purpose: str,
+        tag: str = "",
+        edge_type: str = "",
+        limit: int = 50,
     ) -> dict[str, Any] | None:
         api_key = os.getenv("GRAPH_API_KEY", "").strip()
         if not api_key:
@@ -169,6 +245,53 @@ class NebulaGraphQueryTool(BaseTool):
             raise ValueError(
                 "Unable to auto-select GRAPH_API_SPACE from Graph API spaces."
             )
+        if edge_type:
+            edge_response = self._get_json(
+                f"{base_url}/{space}/edges?type={urllib.parse.quote(edge_type)}&limit={limit}",
+                api_key,
+            )
+            graph = {
+                "space": space,
+                "version": "graph_api",
+                "schema": {"tags": {}, "edges": {edge_type: {}}},
+                "data": {
+                    "vertices": [],
+                    "edges": [],
+                    "rows": edge_response.get("rows", []),
+                    "columns": edge_response.get("columns", []),
+                },
+                "query": query or edge_type,
+                "source": "graph_api",
+                "raw": edge_response.get("raw", ""),
+                "space_selection": space_selection,
+            }
+            for row in edge_response.get("rows", []):
+                parsed = self._parse_edge_row(row, edge_type)
+                if parsed:
+                    graph["data"]["edges"].append(parsed)
+            return graph
+
+        if tag:
+            vertex_response = self._get_json(
+                f"{base_url}/{space}/vertices?tag={urllib.parse.quote(tag)}&limit={limit}",
+                api_key,
+            )
+            return {
+                "space": space,
+                "version": "graph_api",
+                "schema": {"tags": {tag: {}}, "edges": {}},
+                "data": {
+                    "vertices": vertex_response.get("rows", []),
+                    "edges": [],
+                    "rows": vertex_response.get("rows", []),
+                    "columns": vertex_response.get("columns", []),
+                },
+                "query": query or tag,
+                "source": "graph_api",
+                "raw": vertex_response.get("raw", ""),
+                "space_selection": space_selection,
+            }
+
         payload = {
             "statement": self._readonly_query(query or keyword or user_question),
             "keyword": keyword,
@@ -633,6 +756,3 @@ class NebulaGraphQueryTool(BaseTool):
             "source": "mock_fallback",
             "error": error,
         }
-
-
-KnowledgeGraphQueryTool = NebulaGraphQueryTool

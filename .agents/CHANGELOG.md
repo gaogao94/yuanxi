@@ -16,6 +16,143 @@
   - `git status --short`：待验证
 - 遗留问题：无
 
+## [2026-05-22 09:52] Agent1 具名门店口语范围修复
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `agents/agent1.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：修复“查看仙乐斯的转化率”无法从原始问题识别门店范围、后续把“仙乐斯的”原样写入 `clinic_scope` 的问题。Agent1 现在会识别“X 的转化率/现金流/复诊率”等口语表达，并统一清洗上下文中的门店范围；本地对话在 LLM 已提供有效上下文更新时不再打印过期追问。
+- 前端影响：无
+- 后端影响：Agent1 澄清合同中的 `clinic_scope` 更准确，减少重复追问。
+- 接口影响：无新增接口；`task_contract.input_context.clinic_scope` 内容会更规范。
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_local_agent1_chat_suppresses_stale_llm_prompt_after_context_update tests.test_agent1_workflow.Agent1WorkflowTest.test_local_agent1_chat_does_not_reask_possessive_named_clinic tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_uses_possessive_named_clinic_from_original_question tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_cleans_possessive_clinic_scope_from_context`：通过
+  - `.venv/bin/python -m unittest discover -s tests`：通过，53 个测试
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`：通过
+  - `printf '查看仙乐斯的转化率\n1\n最近一个月\n' | .venv/bin/python local_agent1_test.py`：通过，真实 Graph API + DeepSeek 输出 `clinic_scope=["仙乐斯"]`
+  - `printf '查看仙乐斯门店的转化率\n1\n最近一个月\n' | .venv/bin/python local_agent1_test.py`：通过，真实 Graph API + DeepSeek 输出 `clinic_scope=["仙乐斯门店"]`
+  - `git diff --check`：通过
+- 遗留问题：
+  - 复杂别名、多个同名门店或真实门店 ID 消歧仍需要 Agent2 后续用 `nebula_graph_query` 和业务数据确认。
+
+## [2026-05-22 09:21] Agent1 复用 Agent2 图谱工具
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `tools/nebula_graph_query.py`
+  - `tools/kg_query.py`
+  - `agents/agent1.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `README.md`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `docs/requirements/agent1-workflow-requirements.md`
+  - `docs/tasks/agent3-onboarding-tasks.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：Agent1 不再保留独立 `tools/kg_query.py`，直接复用 Agent2 的 `tools/nebula_graph_query.py`。`NebulaGraphQueryTool` 默认输出文本摘要给 Agent2，Agent1 调用时传 `output_format=json` 获取结构化 graph schema、vertices、edges。`task_contract.required_capabilities` 和 `agent2_planning_policy.must_use_same_graph_tool` 已统一为 `nebula_graph_query`。
+- 前端影响：无
+- 后端影响：Agent1 与 Agent2 共用同一个图谱工具类；删除独立 Agent1 图谱工具文件。
+- 接口影响：Agent2 合同中的图谱能力标识从 `knowledge_graph_query` 统一为 `nebula_graph_query`。
+- 数据库影响：无写入，仍只读查询图数据库。
+- 配置影响：无。
+- 验证：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_nebula_graph_query_reads_medgraph_json_from_env tests.test_agent1_workflow.Agent1WorkflowTest.test_nebula_graph_query_defaults_to_text_for_agent2 tests.test_agent1_workflow.Agent1WorkflowTest.test_build_scheduler_agent_uses_only_graph_and_problem_tools tests.test_agent1_workflow.Agent1WorkflowTest.test_run_agent1_clarification_queries_graph_tool_before_planning`：通过
+  - `.venv/bin/python -m unittest discover -s tests`：通过，49 个测试
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`：通过
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`：通过，真实 DeepSeek + Graph API 输出 `nebula_graph_query` 能力合同
+  - `git diff --check`：通过
+- 遗留问题：
+  - Agent2 真实执行链路仍需按 `required_capabilities` 消费合同并回填执行结果
+
+## [2026-05-20 15:59] Agent1 能力合同替代固定 todos
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `agents/agent1.py`
+  - `integration.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `tools/nebula_graph_query.py`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：Agent1 的 `task_contract` 不再输出固定 `todos`。合同现在只负责说明澄清后的任务、输入范围、图谱边界、Agent2 必须满足的能力、验收标准、安全约束和最终交付要求；具体任务拆分、执行步骤和工具调用顺序由 Agent2 自主决定。后续已在 2026-05-22 将 Agent1 图谱查询统一到 Agent2 的 `tools/nebula_graph_query.py`。
+- 前端影响：无
+- 后端影响：Agent1 审核从检查 `completed_todos` 改为检查 `completed_capabilities`；Workflow 模拟执行也改为按 `required_capabilities` 回填结果。
+- 接口影响：删除 `task_contract.todos`；新增或强化 `clarified_task`、`graph_query_boundary`、`graph_entity_hints`、`graph_relationship_hints`、`required_capabilities`、`acceptance_criteria`、`safety_constraints`、`agent2_planning_policy`、`expected_deliverable`。Agent2 必须使用同一个 `nebula_graph_query` 工具自行查询图数据库。
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_review_agent2_result_does_not_count_cache_as_data_fetch`：通过
+  - `.venv/bin/python -m unittest discover -s tests`：通过，48 个测试
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`：通过
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`：通过，真实 DeepSeek + Graph API 输出能力合同，不含 `todos`，包含 `root_cause_analysis` 和 `agent2_planning_policy.execution_steps=agent2_decides`
+  - `git diff --check`：通过
+- 遗留问题：
+  - Agent2 仍需实现按 `required_capabilities` 自主规划执行的真实工具链路
+
+## [2026-05-20 15:40] Agent1 诊断任务拆分
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `agents/agent1.py`
+  - `tests/test_agent1_workflow.py`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：当 `task_contract.input_context.analysis_intent = root_cause_analysis` 时，Agent1 现在会把 Agent2 合同拆成 9 步诊断流程：验证问题是否成立、拆解影响维度、形成原因假设和证据链、准备诊断可视化输出、组装诊断报告。普通指标分析合同仍保持原 7 步结构。
+- 前端影响：无
+- 后端影响：Agent2 可直接按诊断步骤执行，不再把原因分析压在普通指标分析步骤里。
+- 接口影响：诊断类 `task_contract.todos` 步骤更细；诊断类 `final_expected_output.sections` 增加“问题是否成立”“对比基准”“原因假设”“证据链”。
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_captures_low_metric_root_cause_intent_for_agent2`：通过
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`：通过，真实 DeepSeek + Graph API 输出诊断类 9 步合同
+  - `.venv/bin/python -m unittest discover -s tests`：通过，47 个测试
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`：通过
+  - `git diff --check`：通过
+- 遗留问题：
+  - Agent2 实现仍需按新的诊断步骤消费合同并调用真实工具执行
+
+## [2026-05-20 15:26] Agent1 诊断类问题意图捕获
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `agents/agent1.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `docs/requirements/agent1-system-tooling-requirements.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：Agent1 现在会识别“转化率很低，为什么”“下降原因”“异常原因”等诊断类问题，并在 `task_contract.input_context` 中写入 `analysis_intent`、`problem_statement` 和 `problem_signal`。Agent2 需要先验证该问题信号是否成立，再进行原因拆解。同步修复 LLM 未结构化写入有效澄清回答时的空转问题，允许本地流程用确定性解析接住“一个月”“仙乐斯”等有效回答。
+- 前端影响：无
+- 后端影响：Agent2 可通过新增上下文字段知道这是原因分析任务，而不是普通指标查询。
+- 接口影响：`task_contract.input_context` 新增向后兼容字段：`analysis_intent`、`problem_statement`、`problem_signal`。
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_captures_low_metric_root_cause_intent_for_agent2`：通过
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_local_agent1_chat_captures_root_cause_intent_and_valid_clinic_reply`：通过
+  - `printf '转化率很低，为什么\n1\n一个月\n仙乐斯\n' | .venv/bin/python local_agent1_test.py`：通过，真实 DeepSeek + Graph API 生成包含诊断意图的 ready 合同
+  - `.venv/bin/python -m unittest discover -s tests`：通过，47 个测试
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`：通过
+  - `git diff --check`：通过
+- 遗留问题：
+  - `problem_signal.comparison_baseline` 当前为 `unspecified`，Agent2 需要自行用真实数据查找可用基准并明确说明验证结论
+
 ## [2026-05-20 14:50] Agent1 图谱选项稳定展示
 
 - Agent：codex-gpt5
@@ -230,7 +367,7 @@
   - `.agents/CHANGELOG.md`
 - 变更摘要：修复输入“你好”等非业务文本时仍进入固定指标澄清模板的问题；Agent1 现在会先判断是否为业务分析需求，非业务输入不查询图谱、不生成固定指标选项，只要求用户补充业务分析问题；本地测试脚本在用户补充业务问题后会重新查询图谱并继续多轮澄清
 - 前端影响：无
-- 后端影响：Agent1 澄清入口增加业务意图门控；`run_agent1_clarification` 对非业务输入会跳过 `knowledge_graph_query`
+- 后端影响：Agent1 澄清入口增加业务意图门控；`run_agent1_clarification` 对非业务输入会跳过 `nebula_graph_query`
 - 接口影响：无
 - 数据库影响：无写入；非业务输入跳过图谱查询
 - 配置影响：无
@@ -249,22 +386,22 @@
 - Agent：codex-gpt5
 - 状态：完成
 - 修改文件：
-  - `tools/kg_query.py`
+  - `tools/nebula_graph_query.py`
   - `local_agent1_test.py`
   - `tests/test_agent1_workflow.py`
   - `docs/requirements/agent1-system-tooling-requirements.md`
   - `.agents/ACTIVE_WORK.md`
   - `.agents/CHANGELOG.md`
-- 变更摘要：修正“由用户输入 graph space”的方向，改为 `knowledge_graph_query` 自动调用 `GET /spaces`，再按用户问题与各 space 的 tag / edge / space 名称命中度选择目标 space；本地 PyCharm 脚本默认设置 `GRAPH_API_AUTO_SPACE=1`，不再要求用户输入库名
+- 变更摘要：修正“由用户输入 graph space”的方向，改为 `nebula_graph_query` 自动调用 `GET /spaces`，再按用户问题与各 space 的 tag / edge / space 名称命中度选择目标 space；本地 PyCharm 脚本默认设置 `GRAPH_API_AUTO_SPACE=1`，不再要求用户输入库名
 - 前端影响：无
 - 后端影响：Agent1 图谱查询更接近真实自动流程；返回结果增加 `space_selection`，用于解释自动选择依据
 - 接口影响：无新增接口；新增使用既有 `GET /spaces`
 - 数据库影响：无写入；会只读探测候选 graph space 的 schema
 - 配置影响：新增 `GRAPH_API_AUTO_SPACE`；设置为 `1` 时强制自动选择，设置为 `0` 且提供 `GRAPH_API_SPACE` 时固定查询指定 space
 - 验证：
-  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_knowledge_graph_query_strict_mode_auto_selects_graph_space`：通过
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_nebula_graph_query_strict_mode_auto_selects_graph_space`：通过
   - `.venv/bin/python -m unittest discover -s tests`：通过，18 个测试
-  - `.venv/bin/python -m compileall tools/kg_query.py local_agent1_test.py`：通过
+  - `.venv/bin/python -m compileall tools/nebula_graph_query.py local_agent1_test.py`：通过
   - `printf '帮我看看最近门店转化怎么样\n1\n2\n2\n' | .venv/bin/python local_agent1_test.py`：通过，未输入 graph space，真实 API 自动选择 `medgraph`
   - `git diff --check`：通过
 - 遗留问题：
@@ -347,12 +484,12 @@
 - 状态：完成
 - 修改文件：
   - `agents/agent1.py`
-  - `tools/kg_query.py`
+  - `tools/nebula_graph_query.py`
   - `tests/test_agent1_workflow.py`
   - `docs/requirements/agent1-system-tooling-requirements.md`
   - `.agents/ACTIVE_WORK.md`
   - `.agents/CHANGELOG.md`
-- 变更摘要：新增 `GRAPH_API_STRICT=1` 严格真实 API 模式；启用后 `knowledge_graph_query` 不使用 `MEDGRAPH_JSON_PATH` 或 mock fallback；按 Apipost 成功配置修正鉴权为 `Authorization: <API Key>`，请求体字段为 `statement`，并增加 Apipost 风格 `User-Agent`；Agent1 可基于真实 API 返回的 `转化` 边生成澄清问题
+- 变更摘要：新增 `GRAPH_API_STRICT=1` 严格真实 API 模式；启用后 `nebula_graph_query` 不使用 `MEDGRAPH_JSON_PATH` 或 mock fallback；按 Apipost 成功配置修正鉴权为 `Authorization: <API Key>`，请求体字段为 `statement`，并增加 Apipost 风格 `User-Agent`；Agent1 可基于真实 API 返回的 `转化` 边生成澄清问题
 - 前端影响：无
 - 后端影响：Agent1 严格依赖真实图谱数据的路径已可验证；未修改 Agent2/Agent3 主逻辑
 - 接口影响：新增配置 `GRAPH_API_STRICT=1`；错误响应结构为 `status=error`、`source=graph_api`、空 `data.vertices/edges`
@@ -361,7 +498,7 @@
 - 验证：
   - `.venv/bin/python -m unittest discover -s tests`：通过，15 个测试
   - `.venv/bin/python -m compileall agents tools integration.py tests`：通过
-  - `.venv/bin/python -m compileall tools/kg_query.py`：通过
+  - `.venv/bin/python -m compileall tools/nebula_graph_query.py`：通过
   - `git diff --check`：通过
   - 真实 Graph API 严格模式联调：通过，返回 `medgraph` 的 27 个 tag、30 个 edge type，并取到 `patient --转化--> member` 边；Agent1 返回 `needs_clarification`
 - 遗留问题：
@@ -373,16 +510,16 @@
 - 状态：完成
 - 修改文件：
   - `agents/agent1.py`
-  - `tools/kg_query.py`
+  - `tools/nebula_graph_query.py`
   - `integration.py`
   - `tests/test_agent1_workflow.py`
   - `docs/requirements/agent1-system-tooling-requirements.md`
   - `.agents/ACTIVE_WORK.md`
   - `.agents/CHANGELOG.md`
-- 变更摘要：只推进 Agent1 范围；新增 `run_agent1_clarification` 本地入口，Agent1 可先调用 `knowledge_graph_query` 获取图谱数据再生成澄清结果；`knowledge_graph_query` 改为正式 Graph API 优先、本地 JSON fallback、mock fallback，并兼容 `raw` 中的 Nebula 错误文本
+- 变更摘要：只推进 Agent1 范围；新增 `run_agent1_clarification` 本地入口，Agent1 可先调用 `nebula_graph_query` 获取图谱数据再生成澄清结果；`nebula_graph_query` 改为正式 Graph API 优先、本地 JSON fallback、mock fallback，并兼容 `raw` 中的 Nebula 错误文本
 - 前端影响：无
 - 后端影响：Agent1 澄清链路和图谱查询工具行为增强；未修改 Agent2/Agent3 主逻辑
-- 接口影响：`knowledge_graph_query` 工具名不变；新增可选环境变量 `GRAPH_API_BASE_URL`、`GRAPH_API_KEY`、`GRAPH_API_SPACE`、`GRAPH_API_TIMEOUT_SECONDS`
+- 接口影响：`nebula_graph_query` 工具名不变；新增可选环境变量 `GRAPH_API_BASE_URL`、`GRAPH_API_KEY`、`GRAPH_API_SPACE`、`GRAPH_API_TIMEOUT_SECONDS`
 - 数据库影响：无写入；只读访问 Graph API 或本地 JSON
 - 配置影响：正式 Graph API 需要通过环境变量提供 Bearer API Key，不硬编码密钥
 - 验证：
@@ -415,3 +552,24 @@
 - 遗留问题：
   - `MEDGRAPH_JSON_PATH` 是否长期保留为离线 fallback 仍待定
   - 指标口径在图谱中的完整度仍待业务确认
+
+## [2026-05-22 09:11] 启动 app/web 前端项目
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `app/web/package-lock.json`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：为 `app/web` 安装 npm 依赖并启动 Vite 开发服务器，确认项目可在本地访问；安装过程中因 npm 源超时，改用更长超时和重试参数后成功完成安装
+- 前端影响：本地开发环境已就绪，可通过 `http://localhost:5175/` 访问页面
+- 后端影响：无
+- 接口影响：无
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `npm install --registry=https://registry.npmjs.org --fetch-timeout=600000 --fetch-retries=5 --fetch-retry-maxtimeout=120000`：通过
+  - `npm run dev -- --host 0.0.0.0`：通过
+  - `git status --short`：通过
+- 遗留问题：
+  - 首次安装依赖受网络波动影响明显，后续如再次超时可继续使用延长超时参数

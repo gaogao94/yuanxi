@@ -36,7 +36,7 @@ from tools.knowledge_query import KnowledgeBaseQueryTool
 data_agent = Agent(
     ...
     tools=[
-        KnowledgeGraphQueryTool(),
+        NebulaGraphQueryTool(),
         DataFetchTool(),
         SQLDebugTool(),
         CacheManagerTool(),

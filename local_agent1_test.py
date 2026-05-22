@@ -13,7 +13,7 @@ import re
 from dotenv import load_dotenv
 
 from agents.agent1 import Agent1, Agent1LLMClarifier, Agent1LLMError, run_agent1_clarification
-from tools.kg_query import KnowledgeGraphQueryTool
+from tools.nebula_graph_query import NebulaGraphQueryTool
 
 
 MAX_CONVERSATION_TURNS = 12
@@ -52,7 +52,7 @@ def main() -> None:
 
 
 def _load_graph(question: str) -> dict:
-    raw_result = KnowledgeGraphQueryTool()._run(question)
+    raw_result = NebulaGraphQueryTool()._run(question, output_format="json")
     return json.loads(raw_result)
 
 
@@ -175,8 +175,9 @@ def _run_conversation(question: str) -> dict:
 
         replacement_question = None
         llm_changed_context = False
+        llm_message = ""
         if llm is not None:
-            replacement_question, llm_changed_context = _interpret_answer_with_llm(
+            replacement_question, llm_changed_context, llm_message = _interpret_answer_with_llm(
                 llm,
                 question,
                 context,
@@ -190,8 +191,10 @@ def _run_conversation(question: str) -> dict:
             context.clear()
             continue
 
-        if llm is None and _answer_looks_valid_for_item(item, answer):
+        if (llm is None or not llm_changed_context) and _answer_looks_valid_for_item(item, answer):
             replacement_question = _apply_answer_to_context(context, item, answer)
+        elif llm_message and not llm_changed_context:
+            print(f"Agent1：{llm_message}")
         if replacement_question:
             question = replacement_question
             context.clear()
@@ -310,7 +313,7 @@ def _interpret_answer_with_llm(
     result: dict,
     item: dict,
     answer: str,
-) -> tuple[str | None, bool]:
+) -> tuple[str | None, bool, str]:
     try:
         turn = llm.interpret_user_reply(
             original_question=question,
@@ -322,13 +325,12 @@ def _interpret_answer_with_llm(
     except Agent1LLMError as exc:
         if not _allow_deterministic_fallback():
             raise SystemExit(f"Agent1：LLM 解析用户回复失败：{exc}") from exc
-        return None, False
+        return None, False, ""
 
     changed_context = _llm_turn_has_context_change(turn)
     replacement_question = _apply_llm_turn_to_context(context, turn)
-    if turn.get("assistant_message") and not replacement_question and not changed_context:
-        print(f"Agent1：{turn['assistant_message']}")
-    return replacement_question, changed_context
+    assistant_message = str(turn.get("assistant_message") or "").strip()
+    return replacement_question, changed_context, assistant_message
 
 
 def _llm_turn_has_context_change(turn: dict) -> bool:
@@ -502,17 +504,12 @@ def _normalize_time_range_answer(answer: str) -> str:
 
 
 def _normalize_clinic_scope_answer(answer: str) -> list[str]:
-    if "上海" in answer:
-        return ["Shanghai clinics"]
-    if "全部" in answer:
-        return ["all_authorized_clinics"]
     if "指定" in answer:
         raw_ids = input("请输入门店 ID，多个用逗号分隔，例如 SH001,SH002：").strip()
         clinic_ids = [item.strip() for item in raw_ids.replace("，", ",").split(",") if item.strip()]
         return clinic_ids or ["specified_clinics"]
-    if "," in answer or "，" in answer:
-        return [item.strip() for item in answer.replace("，", ",").split(",") if item.strip()]
-    return [answer] if answer else ["Shanghai clinics"]
+    normalized = Agent1()._normalize_clinic_scope(answer)
+    return normalized or ["Shanghai clinics"]
 
 
 def _print_final_result(result: dict) -> None:

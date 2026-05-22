@@ -417,7 +417,9 @@ class Agent1:
         time_range = self.normalize_time_range(
             context.get("time_range") or self._detect_time_range(effective_question)
         )
-        clinic_scope = context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+        clinic_scope = self._normalize_clinic_scope(
+            context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+        )
         return self._has_business_analysis_intent(
             effective_question,
             metric,
@@ -432,11 +434,19 @@ class Agent1:
         agent2_result: dict[str, Any],
     ) -> dict[str, Any]:
         task_contract = agent1_output.get("task_contract") or {}
-        todos = task_contract.get("todos", [])
-        expected_todo_ids = [todo["id"] for todo in todos]
-        completed_todos = self._completed_todos(agent2_result, todos)
-        missing_todos = [
-            todo_id for todo_id in expected_todo_ids if todo_id not in completed_todos
+        required_capabilities = [
+            str(capability.get("name"))
+            for capability in task_contract.get("required_capabilities", [])
+            if capability.get("required") and capability.get("name")
+        ]
+        completed_capabilities = self._completed_capabilities(
+            agent2_result,
+            required_capabilities,
+        )
+        missing_capabilities = [
+            capability
+            for capability in required_capabilities
+            if capability not in completed_capabilities
         ]
 
         scope_violations = self._scope_violations(task_contract, agent2_result)
@@ -445,7 +455,7 @@ class Agent1:
         privacy_check = self._privacy_check(agent2_result)
 
         revision_requests = self._revision_requests(
-            missing_todos,
+            missing_capabilities,
             scope_violations,
             metric_consistency,
             evidence_check,
@@ -469,8 +479,8 @@ class Agent1:
         return {
             "review_result": {
                 "status": status,
-                "completed_todos": completed_todos,
-                "missing_todos": missing_todos,
+                "completed_capabilities": completed_capabilities,
+                "missing_capabilities": missing_capabilities,
                 "scope_violations": scope_violations,
                 "metric_consistency": metric_consistency,
                 "evidence_check": evidence_check,
@@ -495,10 +505,16 @@ class Agent1:
             context.get("time_range") or self._detect_time_range(effective_question)
         )
         clinic_scope_from_context = "clinic_scope" in context
-        clinic_scope = context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+        clinic_scope = self._normalize_clinic_scope(
+            context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+        )
         address_scope = self._detect_address_scope(effective_question)
         output_format = context.get("output_format") or self._detect_output_format(effective_question)
         population = context.get("population") or self._detect_population(effective_question)
+        analysis_context = context.get("analysis_context") or self._detect_analysis_context(
+            effective_question,
+            metric,
+        )
 
         if not self._has_business_analysis_intent(
             effective_question,
@@ -523,7 +539,7 @@ class Agent1:
                 metric_options = graph_metric_options
                 metric_question = "图谱中匹配到业务关系，本次要按哪个口径继续分析？"
                 metric_type = "single_select"
-                metric_source = "knowledge_graph_query"
+                metric_source = "nebula_graph_query"
                 ambiguity_options = graph_metric_options
 
             ambiguities.append(
@@ -602,12 +618,24 @@ class Agent1:
             "must_include",
             ["问题定义", "分析范围", "核心指标结果", "限制与风险"],
         )
+        if analysis_context["analysis_intent"] == "root_cause_analysis":
+            must_include = [
+                "验证问题是否成立",
+                "对比基准",
+                "原因拆解",
+                *[item for item in must_include if item not in {"原因拆解"}],
+            ]
 
         return {
             "status": status,
             "original_question": original_question,
-            "understood_intent": self._understood_intent(metric, time_range, clinic_scope),
-            "root_goal": self._root_goal(metric),
+            "understood_intent": self._understood_intent(
+                metric,
+                time_range,
+                clinic_scope,
+                analysis_context,
+            ),
+            "root_goal": self._root_goal(metric, analysis_context),
             "ambiguities": ambiguities,
             "clarification_questions": clarification_questions,
             "implicit_assumptions": self._implicit_assumptions(status),
@@ -618,6 +646,9 @@ class Agent1:
                 "time_range": time_range or "",
                 "clinic_scope": clinic_scope or [],
                 "population": population,
+                "analysis_intent": analysis_context["analysis_intent"],
+                "problem_statement": analysis_context["problem_statement"],
+                "problem_signal": analysis_context["problem_signal"],
                 "excluded_scope": ["未授权门店", "非脱敏患者明细", "写入型数据库操作"],
             },
             "expected_result": {
@@ -859,7 +890,7 @@ class Agent1:
             return {}
         if graph.get("status") == "error":
             return {
-                "source": "knowledge_graph_query",
+                "source": "nebula_graph_query",
                 "space": graph.get("space", ""),
                 "error": str(graph.get("error", "Graph API query failed.")),
                 "relationships": [],
@@ -904,7 +935,7 @@ class Agent1:
                     "from": vid_to_tag.get(src, src),
                     "relation": relation,
                     "to": vid_to_tag.get(dst, dst),
-                    "reason": "来自 knowledge_graph_query 的图谱关系。",
+                    "reason": "来自 nebula_graph_query 的图谱关系。",
                 }
             )
 
@@ -914,7 +945,7 @@ class Agent1:
                     "from": "图谱实体",
                     "relation": edge_name,
                     "to": "图谱实体",
-                    "reason": "来自 knowledge_graph_query 的图谱关系类型。",
+                    "reason": "来自 nebula_graph_query 的图谱关系类型。",
                 }
                 for edge_name in matched_edge_names
             ]
@@ -932,7 +963,7 @@ class Agent1:
         clarification_options = self._graph_clarification_options(relationships)
 
         return {
-            "source": "knowledge_graph_query",
+            "source": "nebula_graph_query",
             "space": graph.get("space", ""),
             "relationships": relationships,
             "related_entities": related_entities,
@@ -976,13 +1007,13 @@ class Agent1:
             "status": "blocked",
             "original_question": original_question,
             "understood_intent": "Agent1 需要先查询真实图数据库才能安全澄清需求。",
-            "root_goal": "等待 knowledge_graph_query 恢复后再生成澄清问题或任务合同。",
+            "root_goal": "等待 nebula_graph_query 恢复后再生成澄清问题或任务合同。",
             "ambiguities": [
                 {
                     "field": "graph_data",
                     "issue": "真实图数据库查询失败，不能使用本地 mock 或静态规则替代。",
                     "required": True,
-                    "source": "knowledge_graph_query",
+                    "source": "nebula_graph_query",
                 }
             ],
             "clarification_questions": [],
@@ -991,7 +1022,7 @@ class Agent1:
                 "Graph API 不可用时不下发 Agent2。",
             ],
             "blocking_reason": {
-                "source": "knowledge_graph_query",
+                "source": "nebula_graph_query",
                 "error": graph_insights["error"],
             },
             "confirmed_scope": {
@@ -1049,7 +1080,7 @@ class Agent1:
                     "field": "graph_match",
                     "issue": f"真实图谱未命中与“{metric_label or metric}”相关的实体或关系。",
                     "required": True,
-                    "source": "knowledge_graph_query",
+                    "source": "nebula_graph_query",
                 }
             ],
             "clarification_questions": [],
@@ -1058,14 +1089,16 @@ class Agent1:
                 "图谱未命中时不生成给 Agent2 的任务合同。",
             ],
             "blocking_reason": {
-                "source": "knowledge_graph_query",
+                "source": "nebula_graph_query",
                 "error": f"图谱查询成功，但未命中与“{metric_label or metric}”相关的实体或关系；当前不生成任务合同。",
             },
             "confirmed_scope": {
                 "metric": metric or "",
                 "metric_definition": "",
                 "time_range": "",
-                "clinic_scope": context.get("clinic_scope") or self._detect_clinic_scope(effective_question),
+                "clinic_scope": self._normalize_clinic_scope(
+                    context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+                ),
                 "population": context.get("population") or "authorized business population",
                 "excluded_scope": ["未授权门店", "非脱敏患者明细", "写入型数据库操作"],
             },
@@ -1098,107 +1131,51 @@ class Agent1:
     ) -> dict[str, Any]:
         confirmed_scope = clarification_result["confirmed_scope"]
         task_id = self._task_id(confirmed_scope)
-        todos = [
-            self._todo(
-                "step_1",
-                "确认图谱实体和关系",
-                "knowledge_graph_query",
-                [],
-                "仅在 graph_scope 边界内查询图谱中的目标门店、指标、患者、预约、就诊和医生等实体关系。",
-                "已解析的实体 ID、关系证据和图谱缺口。",
-                "查询的实体类型必须在 graph_query_boundary.allowed_entity_types 内。",
-                "真实图数据库连接可能不可用。",
-                "返回结构化失败原因，不使用本地 mock 或模拟图谱结果。",
-            ),
-            self._todo(
-                "step_2",
-                "获取限定范围内的业务数据",
-                "data_fetch",
-                ["step_1"],
-                "根据 input_context 生成只读 SQL 或只读数据查询，必须包含指标、时间范围、门店范围和人群过滤条件。",
-                "包含行数、字段、过滤条件、时间范围和脱敏患者字段的数据概况。",
-                "SQL 必须只读、有边界、有说明，并与 input_context 一致。",
-                "业务数据库可能不可用，或 SQL 执行失败。",
-                "返回失败原因和 debug_history，不生成模拟数据，也不得扩大取数范围。",
-            ),
-            self._todo(
-                "step_3",
-                "检查 SQL 和数据安全",
-                "sql_check",
-                ["step_2"],
-                "检查 SQL 记录中的写入关键字、缺失边界、查询压力风险和隐私泄露风险。",
-                "SQL 安全检查结果和人工复核备注。",
-                "不得出现 DELETE、UPDATE、DROP、TRUNCATE、患者原始姓名或手机号输出。",
-                "生成的 SQL 可能不完整。",
-                "阻断不安全 SQL，并要求改成正确的只读查询。",
-            ),
-            self._todo(
-                "step_4",
-                "缓存中间数据集",
-                "data_fetch",
-                ["step_2", "step_3"],
-                "根据 task_id 和 input_context 生成稳定 cache_key，并设置一小时有效期。",
-                "缓存状态、缓存 key、过期时间和断点续跑支持信息。",
-                "同一个任务合同在过期前可以复用缓存。",
-                "文件缓存或 Redis 缓存可能不可用。",
-                "跳过缓存，并将 cache_result.status 标记为 skipped。",
-            ),
-            self._todo(
-                "step_5",
-                "分析指标和维度",
-                "basic_analysis",
-                ["step_2", "step_3"],
-                "计算核心指标；如果有基线则进行对比，并按门店、医生、渠道和时间周期拆解。",
-                "指标摘要、维度拆解、趋势发现和有证据支持的原因假设。",
-                "每条发现都必须引用数据证据或图谱证据。",
-                "部分维度的样本量可能过小。",
-                "返回 partial_success，并只保留可信维度。",
-            ),
-            self._todo(
-                "step_6",
-                "准备可视化输出",
-                "visualization",
-                ["step_5"],
-                "生成图表规格或图表文件，每个图表只回答一个业务问题。",
-                "图表清单，包含标题、指标、单位、时间范围、数据来源和关键信息。",
-                "每个图表必须有标题、单位、时间范围和明确结论。",
-                "第一版可能无法直接渲染图表文件。",
-                "返回图表规格，不强制生成渲染文件。",
-            ),
+        is_root_cause_analysis = (
+            confirmed_scope.get("analysis_intent") == "root_cause_analysis"
+        )
+        final_sections = [
+            "问题定义",
+            "分析范围",
+            "核心指标结果",
+            "维度拆解",
+            "主要原因",
+            "建议动作",
+            "限制与风险",
         ]
+        if is_root_cause_analysis:
+            final_sections = [
+                "问题定义",
+                "分析范围",
+                "问题是否成立",
+                "对比基准",
+                "维度拆解",
+                "原因假设",
+                "证据链",
+                "建议动作",
+                "限制与风险",
+            ]
 
-        if clarification_result["expected_result"]["format"] == "PPT":
-            todos.append(
-                self._todo(
-                    "step_7",
-                    "生成 PPT 报告",
-                    "ppt_generation",
-                    ["step_5", "step_6"],
-                    "将分析发现和图表整理成 PPT 产物。",
-                    "PPT 文件路径和章节清单。",
-                    "PPT 章节必须匹配 final_expected_output.sections。",
-                    "PPT 生成能力可能不可用。",
-                    "返回 Markdown 报告产物作为降级输出。",
-                )
-            )
-        else:
-            todos.append(
-                self._todo(
-                    "step_7",
-                    "组装 Markdown 报告",
-                    "reasoning",
-                    ["step_5", "step_6"],
-                    "用 Markdown 汇总分析范围、指标结果、证据、建议动作和限制说明。",
-                    "供 Agent1 审核的 Markdown 报告正文。",
-                    "报告必须回答原始业务目标，且不得超出任务范围。",
-                    "部分证据可能不完整。",
-                    "明确标注限制，避免没有证据支撑的结论。",
-                )
-            )
+        expected_deliverable = {
+            "format": clarification_result["expected_result"]["format"],
+            "sections": final_sections,
+            "requirements": [
+                "必须回答澄清后的业务目标。",
+                "必须说明数据范围、图谱证据、业务数据证据和已知限制。",
+                "不得输出未脱敏患者姓名、手机号、邮箱或支付凭证。",
+            ],
+        }
 
         return {
             "task_id": task_id,
             "goal": clarification_result["root_goal"],
+            "clarified_task": {
+                "original_question": clarification_result["original_question"],
+                "understood_intent": clarification_result["understood_intent"],
+                "analysis_intent": confirmed_scope["analysis_intent"],
+                "agent2_execution_owner": True,
+                "execution_note": "Agent1 只负责澄清任务和边界；Agent2 自主规划执行步骤和工具调用顺序。",
+            },
             "input_context": {
                 "metric": confirmed_scope["metric"],
                 "metric_label": self._metric_label(
@@ -1209,22 +1186,187 @@ class Agent1:
                 "time_range": confirmed_scope["time_range"],
                 "clinic_scope": confirmed_scope["clinic_scope"],
                 "population": confirmed_scope["population"],
-                "graph_scope_ref": "graph_scope",
+                "analysis_intent": confirmed_scope["analysis_intent"],
+                "problem_statement": confirmed_scope["problem_statement"],
+                "problem_signal": confirmed_scope["problem_signal"],
             },
-            "todos": todos,
-            "final_expected_output": {
-                "format": clarification_result["expected_result"]["format"],
-                "sections": [
-                    "问题定义",
-                    "分析范围",
-                    "核心指标结果",
-                    "维度拆解",
-                    "主要原因",
-                    "建议动作",
-                    "限制与风险",
-                ],
+            "graph_query_boundary": graph_scope.get("graph_query_boundary", {}),
+            "graph_entity_hints": graph_scope.get("target_entities", []),
+            "graph_relationship_hints": graph_scope.get("required_relationships", []),
+            "required_capabilities": self._required_capabilities(
+                confirmed_scope,
+                graph_scope,
+                is_root_cause_analysis,
+            ),
+            "acceptance_criteria": self._contract_acceptance_criteria(
+                confirmed_scope,
+                is_root_cause_analysis,
+            ),
+            "safety_constraints": [
+                "所有数据库操作必须只读。",
+                "必须限定 input_context 中的指标、时间范围、门店范围和人群范围。",
+                "不得输出未脱敏个人身份信息、联系方式或支付凭证。",
+                "真实工具失败时必须返回结构化失败原因，不得生成模拟结论。",
+            ],
+            "agent2_planning_policy": {
+                "execution_steps": "agent2_decides",
+                "tool_call_order": "agent2_decides",
+                "must_use_same_graph_tool": "nebula_graph_query",
+                "agent1_does_not_prescribe_steps": True,
             },
+            "expected_deliverable": expected_deliverable,
+            "final_expected_output": expected_deliverable,
         }
+
+    def _required_capabilities(
+        self,
+        confirmed_scope: dict[str, Any],
+        graph_scope: dict[str, Any],
+        is_root_cause_analysis: bool,
+    ) -> list[dict[str, Any]]:
+        metric_label = self._metric_label(
+            confirmed_scope["metric"],
+            confirmed_scope["metric_definition"],
+        )
+        capabilities = [
+            self._capability(
+                "nebula_graph_query",
+                True,
+                "Agent2 使用与 Agent1 相同的 nebula_graph_query 工具，自主查询图数据库并确认实体、关系、字段位置和图谱缺口。",
+                [
+                    "必须记录查询到的实体、关系和缺口。",
+                    "必须遵守 graph_query_boundary。",
+                    "不得使用本地 mock 替代真实图谱查询结果。",
+                ],
+                {
+                    "graph_query_boundary": graph_scope.get("graph_query_boundary", {}),
+                    "relationship_hints": graph_scope.get("required_relationships", []),
+                },
+            ),
+            self._capability(
+                "data_fetch",
+                True,
+                "Agent2 自主生成只读查询或调用取数工具，获取限定范围内的业务数据。",
+                [
+                    "必须包含指标、时间范围、门店范围和人群过滤条件。",
+                    "必须返回字段、行数、过滤条件和脱敏说明。",
+                    "不得扩大取数范围。",
+                ],
+            ),
+            self._capability(
+                "sql_check",
+                True,
+                "Agent2 必须检查 SQL 或数据查询的只读性、边界、性能风险和隐私风险。",
+                [
+                    "不得出现 DELETE、UPDATE、DROP、TRUNCATE 等写入或破坏性语句。",
+                    "不得输出患者原始姓名、手机号、邮箱或支付凭证。",
+                ],
+            ),
+            self._capability(
+                "cache_manager",
+                False,
+                "Agent2 可以根据任务 ID 和输入上下文缓存中间数据，支持断点续跑和减少重复取数。",
+                [
+                    "如果使用缓存，必须说明 cache_key、过期时间和缓存命中状态。",
+                    "如果不使用缓存，必须说明 skipped 原因。",
+                ],
+            ),
+        ]
+
+        if is_root_cause_analysis:
+            capabilities.append(
+                self._capability(
+                    "root_cause_analysis",
+                    True,
+                    f"验证{metric_label}是否偏低或异常，并拆解主要影响维度和原因假设。",
+                    [
+                        "必须先验证 problem_signal 是否成立，并说明对比基准。",
+                        "没有可用基准时必须标记为 unable_to_validate，不能默认问题成立。",
+                        "必须按门店、医生、渠道、时间周期、患者类型、预约到诊链路和图谱关系等维度拆解。",
+                        "每条原因必须包含数据证据或图谱证据、反证或限制、置信度和建议验证动作。",
+                    ],
+                )
+            )
+        else:
+            capabilities.append(
+                self._capability(
+                    "metric_analysis",
+                    True,
+                    f"计算{metric_label}并按业务维度拆解表现、趋势和异常。",
+                    [
+                        "必须输出指标值、样本量、过滤条件和维度拆解。",
+                        "有可用基线时必须做同比、环比或目标值对比。",
+                        "每条发现必须引用数据证据或图谱证据。",
+                    ],
+                )
+            )
+
+        capabilities.extend(
+            [
+                self._capability(
+                    "visualization",
+                    True,
+                    "Agent2 自主决定需要的图表类型，生成图表规格或图表文件。",
+                    [
+                        "每个图表必须只回答一个业务问题。",
+                        "每个图表必须包含标题、单位、时间范围、数据来源和明确结论。",
+                    ],
+                ),
+                self._capability(
+                    "report_generation",
+                    True,
+                    "Agent2 根据 expected_deliverable 生成最终报告，供 Agent1 审核。",
+                    [
+                        "报告必须回答 clarified_task.understood_intent。",
+                        "报告不得超出 input_context 和 graph_query_boundary。",
+                        "报告必须明确限制、风险和未验证项。",
+                    ],
+                ),
+            ]
+        )
+        return capabilities
+
+    def _capability(
+        self,
+        name: str,
+        required: bool,
+        purpose: str,
+        acceptance_criteria: list[str],
+        constraints: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        capability = {
+            "name": name,
+            "required": required,
+            "owner": "Agent2",
+            "purpose": purpose,
+            "acceptance_criteria": acceptance_criteria,
+        }
+        if constraints:
+            capability["constraints"] = constraints
+        return capability
+
+    def _contract_acceptance_criteria(
+        self,
+        confirmed_scope: dict[str, Any],
+        is_root_cause_analysis: bool,
+    ) -> list[str]:
+        criteria = [
+            "Agent2 必须自主规划执行步骤，不依赖 Agent1 固定步骤。",
+            "Agent2 必须使用 task_contract.input_context 作为唯一业务范围来源。",
+            "Agent2 必须自行调用 nebula_graph_query 确认图谱实体和关系。",
+            "Agent2 必须输出可被 Agent1 审核的结构化结果和最终报告。",
+        ]
+        if is_root_cause_analysis:
+            criteria.extend(
+                [
+                    "必须先验证用户声称的问题是否成立，再解释原因。",
+                    "必须说明对比基准；没有基准时不得默认问题成立。",
+                    "原因结论必须有数据证据或图谱证据支撑。",
+                ]
+            )
+        else:
+            criteria.append("必须计算目标指标并完成维度拆解、趋势说明和建议动作。")
+        return criteria
 
     def _detect_metric(self, question: str) -> str:
         for metric, info in self.metric_catalog.items():
@@ -1275,9 +1417,21 @@ class Agent1:
             return self._format_date_range(today - timedelta(days=days), today)
 
         if text == "last_30_days" or any(
-            term in text for term in ["最近30天", "近30天", "30天", "最近一个月", "近一个月", "最近一月", "近一月"]
+            term in text
+            for term in [
+                "最近30天",
+                "近30天",
+                "30天",
+                "最近一个月",
+                "近一个月",
+                "最近一月",
+                "近一月",
+                "一个月",
+                "一月",
+                "1个月",
+            ]
         ):
-            if any(term in text for term in ["最近一个月", "近一个月", "最近一月", "近一月"]):
+            if any(term in text for term in ["最近一个月", "近一个月", "最近一月", "近一月", "一个月", "一月", "1个月"]):
                 start = self._subtract_months(today, 1)
             else:
                 start = today - timedelta(days=30)
@@ -1356,19 +1510,86 @@ class Agent1:
                 continue
             start = max(0, marker_index - 12)
             name = question[start : marker_index + len(marker)]
-            name = re.sub(
-                r"^(帮我|帮忙|请|查看|查询|分析|看一下|看看|看|统计|计算|本次|这个|那个|最近|近)+",
-                "",
-                name,
-            )
-            name = name.strip("，,。；;：: 的")
-            if not name or name in {"门店", "诊所", "院区", "店", "最近门店", "近门店"}:
+            name = self._clean_clinic_scope_name(name)
+            if self._is_invalid_named_clinic(name):
                 continue
             if name in {"上海门店", "上海"}:
                 return ""
             if len(name) >= 3:
                 return name
+        possessive_name = self._detect_possessive_clinic_scope(question)
+        if possessive_name:
+            return possessive_name
         return ""
+
+    def _detect_possessive_clinic_scope(self, question: str) -> str:
+        metric_terms = [
+            "初诊转化率",
+            "转化率",
+            "复诊率",
+            "营收",
+            "收入",
+            "预约量",
+            "现金流",
+            "续卡",
+        ]
+        pattern = (
+            r"([\u4e00-\u9fffA-Za-z0-9]{2,24})的(?:"
+            + "|".join(re.escape(term) for term in metric_terms)
+            + r")"
+        )
+        for match in re.finditer(pattern, question):
+            name = self._clean_clinic_scope_name(match.group(1))
+            if self._is_invalid_named_clinic(name):
+                continue
+            if len(name) >= 2:
+                return name
+        return ""
+
+    def _normalize_clinic_scope(self, value: Any) -> list[str]:
+        if value in (None, "", []):
+            return []
+        raw_items = value if isinstance(value, list) else [value]
+        normalized_items: list[str] = []
+        for raw_item in raw_items:
+            for item in re.split(r"[,，]", str(raw_item)):
+                name = self._clean_clinic_scope_name(item)
+                if not name:
+                    continue
+                if "上海" in name:
+                    name = "Shanghai clinics"
+                elif "全部" in name or "所有" in name:
+                    name = "all_authorized_clinics"
+                if name not in normalized_items:
+                    normalized_items.append(name)
+        return normalized_items
+
+    def _clean_clinic_scope_name(self, value: str) -> str:
+        name = str(value or "").strip()
+        name = re.sub(
+            r"^(帮我|帮忙|请|查看|查询|分析|看一下|看看|看|统计|计算|本次|这个|那个|最近|近)+",
+            "",
+            name,
+        )
+        name = re.sub(r"^(最近|近)?[一二三四五六七八九十半两0-9]+个?(天|周|月|年)", "", name)
+        name = re.sub(r"^(今天|昨天|本周|上周|本月|上月|今年|去年)", "", name)
+        name = re.sub(r"(的数据情况|的数据|的情况|情况|表现)$", "", name)
+        return name.strip("，,。；;：: 的")
+
+    def _is_invalid_named_clinic(self, name: str) -> bool:
+        if not name:
+            return True
+        if name in {"门店", "诊所", "院区", "店", "最近门店", "近门店"}:
+            return True
+        generic_terms = {"患者", "客户", "会员", "线索", "预约", "初诊", "复诊", "业务", "指标"}
+        if name in generic_terms:
+            return True
+        time_terms = ["最近", "今天", "昨天", "本周", "上周", "本月", "上月", "今年", "去年"]
+        if any(term in name for term in time_terms):
+            return True
+        if re.search(r"\d", name) and any(unit in name for unit in ("天", "周", "月", "年")):
+            return True
+        return False
 
     def _detect_address_scope(self, question: str) -> str:
         match = re.search(
@@ -1422,17 +1643,59 @@ class Agent1:
             return "revisit patients"
         return "authorized business population"
 
+    def _detect_analysis_context(self, question: str, metric: str) -> dict[str, Any]:
+        metric_label = self._metric_label(metric) or "目标指标"
+        cause_terms = ["为什么", "原因", "怎么回事", "因为什么", "分析原因", "归因"]
+        low_terms = ["很低", "偏低", "过低", "低", "不好", "差"]
+        change_terms = ["下降", "降低", "下滑", "变差", "异常", "波动"]
+
+        asks_cause = any(term in question for term in cause_terms)
+        has_low_signal = any(term in question for term in low_terms)
+        has_change_signal = any(term in question for term in change_terms)
+        if not (asks_cause or has_low_signal or has_change_signal):
+            return {
+                "analysis_intent": "metric_analysis",
+                "problem_statement": "",
+                "problem_signal": {},
+            }
+
+        signal_type = "low_metric" if has_low_signal else "metric_anomaly"
+        if has_change_signal and not has_low_signal:
+            signal_type = "metric_change_or_anomaly"
+
+        return {
+            "analysis_intent": "root_cause_analysis",
+            "problem_statement": question.strip(),
+            "problem_signal": {
+                "type": signal_type,
+                "metric": metric or "",
+                "metric_label": metric_label,
+                "description": f"用户认为{metric_label}偏低或异常，需要解释原因。",
+                "comparison_baseline": "unspecified",
+                "requires_baseline_validation": True,
+                "validation_rule": "Agent2 必须先用历史同期、环比、同类门店均值或目标值等可用基准验证问题是否成立；没有可用基准时必须明确说明无法验证，不得默认认为偏低。",
+            },
+        }
+
     def _understood_intent(
         self,
         metric: str,
         time_range: str,
         clinic_scope: list[str],
+        analysis_context: dict[str, Any] | None = None,
     ) -> str:
         if not metric:
             return "用户希望分析门店经营情况，但核心指标尚未明确。"
         metric_label = self._metric_label(metric)
+        if (analysis_context or {}).get("analysis_intent") == "root_cause_analysis":
+            if time_range and clinic_scope:
+                return (
+                    f"验证 {time_range}、{', '.join(clinic_scope)}的{metric_label}是否偏低，"
+                    "并定位原因和改善动作。"
+                )
+            return f"用户希望解释{metric_label}偏低或异常的原因，但时间范围或门店范围仍需确认。"
         if time_range and clinic_scope:
-            return f"分析 {time_range}、{', '.join(clinic_scope)} 的{metric_label}表现并形成可交付报告。"
+            return f"分析 {time_range}、{', '.join(clinic_scope)}的{metric_label}表现并形成可交付报告。"
         return f"用户希望分析{metric_label}，但时间范围或门店范围仍需确认。"
 
     def _metric_label(self, metric: str, metric_definition: str = "") -> str:
@@ -1445,7 +1708,10 @@ class Agent1:
             return metric_definition
         return metric
 
-    def _root_goal(self, metric: str) -> str:
+    def _root_goal(self, metric: str, analysis_context: dict[str, Any] | None = None) -> str:
+        metric_label = self._metric_label(metric)
+        if (analysis_context or {}).get("analysis_intent") == "root_cause_analysis":
+            return f"验证{metric_label or '目标指标'}是否偏低或异常，并定位主要原因、影响维度和可执行改善动作。"
         if metric == "first_visit_conversion_rate":
             return "定位初诊转化表现、主要影响维度和可执行改善动作。"
         if metric == "revisit_rate":
@@ -1473,56 +1739,30 @@ class Agent1:
         digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
         return f"task_{digest}"
 
-    def _todo(
-        self,
-        todo_id: str,
-        name: str,
-        todo_type: str,
-        depends_on: list[str],
-        method: str,
-        expected_output: str,
-        self_check: str,
-        risk: str,
-        fallback: str,
-    ) -> dict[str, Any]:
-        return {
-            "id": todo_id,
-            "name": name,
-            "executor": "Agent2",
-            "type": todo_type,
-            "depends_on": depends_on,
-            "can_parallel": not depends_on,
-            "method": method,
-            "expected_output": expected_output,
-            "self_check": self_check,
-            "risk": risk,
-            "fallback": fallback,
-        }
-
-    def _completed_todos(
+    def _completed_capabilities(
         self,
         agent2_result: dict[str, Any],
-        todos: list[dict[str, Any]],
+        required_capabilities: list[str],
     ) -> list[str]:
-        explicit = agent2_result.get("completed_todos")
+        explicit = agent2_result.get("completed_capabilities")
         if isinstance(explicit, list):
-            return [str(todo_id) for todo_id in explicit]
+            return [str(capability) for capability in explicit]
 
         completed = []
-        result_keys_by_type = {
-            "knowledge_graph_query": ["knowledge_graph_result", "graph_result"],
-            "data_fetch": ["data_fetch_result", "cache_result"],
-            "sql_check": ["sql_check_result", "data_fetch_result"],
-            "basic_analysis": ["analysis_result"],
-            "advanced_analysis": ["advanced_analysis_result"],
+        result_keys_by_capability = {
+            "nebula_graph_query": ["knowledge_graph_result", "graph_result"],
+            "data_fetch": ["data_fetch_result"],
+            "sql_check": ["sql_check_result"],
+            "cache_manager": ["cache_result"],
+            "metric_analysis": ["analysis_result"],
+            "root_cause_analysis": ["analysis_result"],
             "visualization": ["visualization_result"],
-            "ppt_generation": ["visualization_result", "report_artifact"],
-            "reasoning": ["final_report"],
+            "report_generation": ["final_report", "report_artifact"],
         }
-        for todo in todos:
-            keys = result_keys_by_type.get(todo["type"], [])
+        for capability in required_capabilities:
+            keys = result_keys_by_capability.get(capability, [])
             if any(key in agent2_result for key in keys):
-                completed.append(todo["id"])
+                completed.append(capability)
         return completed
 
     def _scope_violations(
@@ -1573,25 +1813,25 @@ class Agent1:
 
     def _revision_requests(
         self,
-        missing_todos: list[str],
+        missing_capabilities: list[str],
         scope_violations: list[str],
         metric_consistency: str,
         evidence_check: str,
         privacy_check: str,
     ) -> list[dict[str, str]]:
         requests = []
-        if missing_todos:
+        if missing_capabilities:
             requests.append(
                 {
-                    "target_step": ",".join(missing_todos),
-                    "issue": "Agent2 未完成全部任务合同待办。",
-                    "required_fix": "补齐缺失步骤并输出对应结构化结果。",
+                    "target_capability": ",".join(missing_capabilities),
+                    "issue": "Agent2 未满足任务合同要求的能力或输出。",
+                    "required_fix": "由 Agent2 自主补齐缺失能力对应的工具调用、分析结果或报告内容。",
                 }
             )
         for violation in scope_violations:
             requests.append(
                 {
-                    "target_step": "step_2",
+                    "target_capability": "data_fetch",
                     "issue": violation,
                     "required_fix": "重新按 task_contract.input_context.clinic_scope 取数。",
                 }
@@ -1599,7 +1839,7 @@ class Agent1:
         if metric_consistency == "failed":
             requests.append(
                 {
-                    "target_step": "step_5",
+                    "target_capability": "metric_analysis",
                     "issue": "Agent2 输出指标与任务合同指标不一致。",
                     "required_fix": "按 task_contract.input_context.metric 重新计算并说明口径。",
                 }
@@ -1607,7 +1847,7 @@ class Agent1:
         if evidence_check == "failed":
             requests.append(
                 {
-                    "target_step": "step_5",
+                    "target_capability": "report_generation",
                     "issue": "分析结果缺少证据或最终报告。",
                     "required_fix": "补充 analysis_result、证据说明和 final_report。",
                 }
@@ -1615,7 +1855,7 @@ class Agent1:
         if privacy_check == "failed":
             requests.append(
                 {
-                    "target_step": "step_2",
+                    "target_capability": "data_fetch",
                     "issue": "输出中疑似包含未脱敏个人信息。",
                     "required_fix": "移除或脱敏患者手机号、邮箱等敏感字段后重新提交。",
                 }
@@ -1626,13 +1866,13 @@ class Agent1:
 def build_scheduler_agent(verbose: bool = True) -> Any:
     from crewai import Agent
 
-    from tools.kg_query import KnowledgeGraphQueryTool
+    from tools.nebula_graph_query import NebulaGraphQueryTool
     from tools.problem_reporter import ProblemReporterTool
 
     return Agent(
         role="Agent1 需求澄清与任务规划专家",
         goal=(
-            "基于用户问题和 knowledge_graph_query 返回的图谱数据完成需求澄清、"
+            "基于用户问题和 nebula_graph_query 返回的图谱数据完成需求澄清、"
             "范围限定、任务合同生成，并在遇到问题时通过 problem_reporter 上报。"
         ),
         backstory=(
@@ -1641,7 +1881,7 @@ def build_scheduler_agent(verbose: bool = True) -> Any:
         ),
         verbose=verbose,
         allow_delegation=False,
-        tools=[KnowledgeGraphQueryTool(), ProblemReporterTool()],
+        tools=[NebulaGraphQueryTool(), ProblemReporterTool()],
     )
 
 
@@ -1653,7 +1893,7 @@ def build_clarification_task(original_question: str, scheduler_agent: Any | None
         description=(
             "澄清用户问题并输出结构化 Agent1 结果。\n"
             f"用户问题：{original_question}\n"
-            "如果用户输入是业务分析需求，必须先调用 knowledge_graph_query 获取图谱数据，"
+            "如果用户输入是业务分析需求，必须先调用 nebula_graph_query 获取图谱数据，"
             "再根据图谱中的实体和关系生成澄清问题；如果只是寒暄或缺少业务目标，先要求用户补充业务问题。"
             "如果发现口径歧义或工具异常，使用 problem_reporter 上报。"
         ),
@@ -1671,13 +1911,13 @@ def run_agent1_clarification(
     graph_tool: Any | None = None,
     agent1: Agent1 | None = None,
 ) -> dict[str, Any]:
-    from tools.kg_query import KnowledgeGraphQueryTool
+    from tools.nebula_graph_query import NebulaGraphQueryTool
 
     context = dict(user_context or {})
     coordinator = agent1 or Agent1()
     effective_question = str(context.get("business_question") or original_question)
     if "graph_data" not in context and coordinator.should_query_graph(original_question, context):
-        tool = graph_tool or KnowledgeGraphQueryTool()
-        context["graph_data"] = tool._run(effective_question)
+        tool = graph_tool or NebulaGraphQueryTool()
+        context["graph_data"] = tool._run(effective_question, output_format="json")
 
     return coordinator.prepare_task(original_question, context)
