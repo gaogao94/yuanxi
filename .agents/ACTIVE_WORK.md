@@ -437,3 +437,22 @@
 - 验证结果：图谱选项渲染单测通过；真实 DeepSeek + Graph API 本地流程稳定列出 4 个转化相关口径选项，编号 `1` 映射为“转化率：患者转化为会员的比例”，最终生成 ready 合同
 - 未验证项：未在 PyCharm UI 内点击运行；命令行已验证同一脚本
 - 风险或假设：其他正式集成端也应渲染 `clarification_questions.options`，不要只展示 LLM 生成的自然语言问题
+
+## [2026-05-22 10:00] Agent: trae
+
+- 状态：已完成
+- 任务：将依赖文件添加到 .gitignore
+- 实际修改文件：
+  - `.gitignore`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 前端影响：无
+- 后端影响：无
+- 接口影响：无
+- 数据库影响：无
+- 配置影响：.gitignore 新增 Node.js 依赖目录（node_modules/）、前端构建产物（dist/、build/、.vite/）、Python 包元数据（*.egg-info/、*.egg）、npm 日志（npm-debug.log*）
+- 验证命令：
+  - `git status --short`
+- 验证结果：待验证
+- 未验证项：未执行 git status 确认
+- 风险或假设：无

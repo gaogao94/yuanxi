@@ -1,5 +1,21 @@
 # Agent Collaboration Changelog
 
+## [2026-05-22 10:00] 补充 .gitignore 依赖文件忽略规则
+
+- Agent：trae
+- 状态：完成
+- 修改文件：
+  - `.gitignore`
+- 变更摘要：在 .gitignore 中补充了 Node.js 前端依赖目录（node_modules/）、前端构建产物（dist/、build/、.vite/）、Python 包元数据（*.egg-info/、*.egg）、npm 调试日志（npm-debug.log*）等忽略规则
+- 前端影响：无
+- 后端影响：无
+- 接口影响：无
+- 数据库影响：无
+- 配置影响：.gitignore 规则更完整，覆盖前后端依赖目录
+- 验证：
+  - `git status --short`：待验证
+- 遗留问题：无
+
 ## [2026-05-20 14:50] Agent1 图谱选项稳定展示
 
 - Agent：codex-gpt5

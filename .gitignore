@@ -1,15 +1,25 @@
-# 虚拟环境
+# Python 虚拟环境
 venv/
 env/
 .venv/
 
+# Node.js 依赖
+node_modules/
+
+# 前端构建产物
+dist/
+build/
+.vite/
+
 # 敏感配置
 .env
 
-# 缓存
+# Python 缓存
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+*.egg
 
 # 运行时输出
 output/
@@ -22,3 +32,6 @@ logs/
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# npm 日志
+npm-debug.log*
