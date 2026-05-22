@@ -409,6 +409,50 @@ class Agent1WorkflowTest(unittest.TestCase):
         }
         self.assertNotIn("clinic_scope", question_ids)
 
+    def test_prepare_task_uses_possessive_named_clinic_from_original_question(self):
+        agent = Agent1()
+
+        with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}):
+            result = agent.prepare_task(
+                "查看仙乐斯的转化率",
+                user_context={
+                    "graph_data": sample_medgraph(),
+                    "metric": "first_visit_conversion_rate",
+                    "time_range": "最近一个月",
+                },
+            )
+
+        self.assertEqual(result["clarification_result"]["status"], "ready")
+        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["仙乐斯"])
+        self.assertNotIn(
+            "clinic_scope",
+            {
+                question["id"]
+                for question in result["clarification_result"]["clarification_questions"]
+            },
+        )
+
+    def test_prepare_task_cleans_possessive_clinic_scope_from_context(self):
+        agent = Agent1()
+
+        with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}):
+            result = agent.prepare_task(
+                "查看仙乐斯的转化率",
+                user_context={
+                    "graph_data": sample_medgraph(),
+                    "metric": "first_visit_conversion_rate",
+                    "time_range": "最近一个月",
+                    "clinic_scope": ["仙乐斯的"],
+                },
+            )
+
+        self.assertEqual(result["clarification_result"]["status"], "ready")
+        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["仙乐斯"])
+        self.assertEqual(
+            result["task_contract"]["clarified_task"]["understood_intent"],
+            "分析 2026-04-20 to 2026-05-20、仙乐斯的初诊转化率表现并形成可交付报告。",
+        )
+
     def test_prepare_task_captures_low_metric_root_cause_intent_for_agent2(self):
         agent = Agent1()
 
@@ -756,6 +800,49 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertEqual(result["clarification_result"]["status"], "ready")
         self.assertEqual(input_context["time_range"], "2026-04-15 to 2026-05-20")
         self.assertEqual(input_context["clinic_scope"], ["仙乐斯门店"])
+
+    def test_local_agent1_chat_does_not_reask_possessive_named_clinic(self):
+        with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}), patch(
+            "local_agent1_test._build_llm_clarifier",
+            return_value=FakeNamedClinicLLM(),
+        ), patch(
+            "local_agent1_test._load_graph",
+            return_value=sample_medgraph(),
+        ), patch("builtins.input", side_effect=["转化率", "最近一个月"]):
+            result = _run_conversation("查看仙乐斯的转化率")
+
+        input_context = result["task_contract"]["input_context"]
+        self.assertEqual(result["clarification_result"]["status"], "ready")
+        self.assertEqual(input_context["time_range"], "2026-04-20 to 2026-05-20")
+        self.assertEqual(input_context["clinic_scope"], ["仙乐斯"])
+
+    def test_local_agent1_chat_suppresses_stale_llm_prompt_after_context_update(self):
+        class StalePromptLLM(FakeNamedClinicLLM):
+            def interpret_user_reply(self, original_question, context, agent1_result, pending_item, user_reply):
+                turn = super().interpret_user_reply(
+                    original_question,
+                    context,
+                    agent1_result,
+                    pending_item,
+                    user_reply,
+                )
+                if pending_item.get("id") == "time_range":
+                    turn["assistant_message"] = "请问还要分析哪个门店？"
+                return turn
+
+        with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}), patch(
+            "local_agent1_test._build_llm_clarifier",
+            return_value=StalePromptLLM(),
+        ), patch(
+            "local_agent1_test._load_graph",
+            return_value=sample_medgraph(),
+        ), patch("builtins.input", side_effect=["转化率", "最近一个月"]):
+            output = StringIO()
+            with redirect_stdout(output):
+                result = _run_conversation("查看仙乐斯的转化率")
+
+        self.assertEqual(result["clarification_result"]["status"], "ready")
+        self.assertNotIn("请问还要分析哪个门店", output.getvalue())
 
     def test_local_agent1_chat_captures_root_cause_intent_and_valid_clinic_reply(self):
         with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}), patch(

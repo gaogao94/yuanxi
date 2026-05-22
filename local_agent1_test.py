@@ -193,7 +193,7 @@ def _run_conversation(question: str) -> dict:
 
         if (llm is None or not llm_changed_context) and _answer_looks_valid_for_item(item, answer):
             replacement_question = _apply_answer_to_context(context, item, answer)
-        elif llm_message:
+        elif llm_message and not llm_changed_context:
             print(f"Agent1：{llm_message}")
         if replacement_question:
             question = replacement_question
@@ -504,17 +504,12 @@ def _normalize_time_range_answer(answer: str) -> str:
 
 
 def _normalize_clinic_scope_answer(answer: str) -> list[str]:
-    if "上海" in answer:
-        return ["Shanghai clinics"]
-    if "全部" in answer:
-        return ["all_authorized_clinics"]
     if "指定" in answer:
         raw_ids = input("请输入门店 ID，多个用逗号分隔，例如 SH001,SH002：").strip()
         clinic_ids = [item.strip() for item in raw_ids.replace("，", ",").split(",") if item.strip()]
         return clinic_ids or ["specified_clinics"]
-    if "," in answer or "，" in answer:
-        return [item.strip() for item in answer.replace("，", ",").split(",") if item.strip()]
-    return [answer] if answer else ["Shanghai clinics"]
+    normalized = Agent1()._normalize_clinic_scope(answer)
+    return normalized or ["Shanghai clinics"]
 
 
 def _print_final_result(result: dict) -> None:

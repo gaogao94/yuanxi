@@ -1,3 +1,29 @@
+## [2026-05-22 09:47] Agent: codex-gpt5
+
+- 状态：已完成
+- 任务：修复 Agent1 对“查看仙乐斯的转化率”重复追问门店并污染门店名称的问题
+- 实际修改文件：
+  - `agents/agent1.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 前端影响：无
+- 后端影响：Agent1 可从“仙乐斯的转化率”这类口语问题中识别门店范围；上下文中的 `clinic_scope=["仙乐斯的"]` 会清洗为 `["仙乐斯"]`；本地对话不再打印已过期的 LLM 追问。
+- 接口影响：无新增接口；`task_contract.input_context.clinic_scope` 的内容更规范。
+- 数据库影响：无
+- 配置影响：无
+- 验证命令：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_local_agent1_chat_suppresses_stale_llm_prompt_after_context_update tests.test_agent1_workflow.Agent1WorkflowTest.test_local_agent1_chat_does_not_reask_possessive_named_clinic tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_uses_possessive_named_clinic_from_original_question tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_cleans_possessive_clinic_scope_from_context`
+  - `.venv/bin/python -m unittest discover -s tests`
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`
+  - `printf '查看仙乐斯的转化率\n1\n最近一个月\n' | .venv/bin/python local_agent1_test.py`
+  - `printf '查看仙乐斯门店的转化率\n1\n最近一个月\n' | .venv/bin/python local_agent1_test.py`
+  - `git diff --check`
+- 验证结果：回归测试和全量 53 个单测通过；编译通过；真实 Graph API + DeepSeek 本地流程生成 ready 合同，`clinic_scope` 分别为 `["仙乐斯"]` 和 `["仙乐斯门店"]`，未再重复追问门店。
+- 未验证项：未运行 Agent2 真实执行链路。
+- 风险或假设：具名门店抽取仍是轻量规则；复杂别名、多个同名门店或真实门店 ID 消歧仍需 Agent2 后续用 `nebula_graph_query` 和业务数据确认。
+
 ## [2026-05-20 09:05] Agent: codex-gpt5
 
 - 状态：已完成

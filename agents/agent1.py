@@ -417,7 +417,9 @@ class Agent1:
         time_range = self.normalize_time_range(
             context.get("time_range") or self._detect_time_range(effective_question)
         )
-        clinic_scope = context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+        clinic_scope = self._normalize_clinic_scope(
+            context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+        )
         return self._has_business_analysis_intent(
             effective_question,
             metric,
@@ -503,7 +505,9 @@ class Agent1:
             context.get("time_range") or self._detect_time_range(effective_question)
         )
         clinic_scope_from_context = "clinic_scope" in context
-        clinic_scope = context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+        clinic_scope = self._normalize_clinic_scope(
+            context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+        )
         address_scope = self._detect_address_scope(effective_question)
         output_format = context.get("output_format") or self._detect_output_format(effective_question)
         population = context.get("population") or self._detect_population(effective_question)
@@ -1092,7 +1096,9 @@ class Agent1:
                 "metric": metric or "",
                 "metric_definition": "",
                 "time_range": "",
-                "clinic_scope": context.get("clinic_scope") or self._detect_clinic_scope(effective_question),
+                "clinic_scope": self._normalize_clinic_scope(
+                    context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
+                ),
                 "population": context.get("population") or "authorized business population",
                 "excluded_scope": ["未授权门店", "非脱敏患者明细", "写入型数据库操作"],
             },
@@ -1504,19 +1510,86 @@ class Agent1:
                 continue
             start = max(0, marker_index - 12)
             name = question[start : marker_index + len(marker)]
-            name = re.sub(
-                r"^(帮我|帮忙|请|查看|查询|分析|看一下|看看|看|统计|计算|本次|这个|那个|最近|近)+",
-                "",
-                name,
-            )
-            name = name.strip("，,。；;：: 的")
-            if not name or name in {"门店", "诊所", "院区", "店", "最近门店", "近门店"}:
+            name = self._clean_clinic_scope_name(name)
+            if self._is_invalid_named_clinic(name):
                 continue
             if name in {"上海门店", "上海"}:
                 return ""
             if len(name) >= 3:
                 return name
+        possessive_name = self._detect_possessive_clinic_scope(question)
+        if possessive_name:
+            return possessive_name
         return ""
+
+    def _detect_possessive_clinic_scope(self, question: str) -> str:
+        metric_terms = [
+            "初诊转化率",
+            "转化率",
+            "复诊率",
+            "营收",
+            "收入",
+            "预约量",
+            "现金流",
+            "续卡",
+        ]
+        pattern = (
+            r"([\u4e00-\u9fffA-Za-z0-9]{2,24})的(?:"
+            + "|".join(re.escape(term) for term in metric_terms)
+            + r")"
+        )
+        for match in re.finditer(pattern, question):
+            name = self._clean_clinic_scope_name(match.group(1))
+            if self._is_invalid_named_clinic(name):
+                continue
+            if len(name) >= 2:
+                return name
+        return ""
+
+    def _normalize_clinic_scope(self, value: Any) -> list[str]:
+        if value in (None, "", []):
+            return []
+        raw_items = value if isinstance(value, list) else [value]
+        normalized_items: list[str] = []
+        for raw_item in raw_items:
+            for item in re.split(r"[,，]", str(raw_item)):
+                name = self._clean_clinic_scope_name(item)
+                if not name:
+                    continue
+                if "上海" in name:
+                    name = "Shanghai clinics"
+                elif "全部" in name or "所有" in name:
+                    name = "all_authorized_clinics"
+                if name not in normalized_items:
+                    normalized_items.append(name)
+        return normalized_items
+
+    def _clean_clinic_scope_name(self, value: str) -> str:
+        name = str(value or "").strip()
+        name = re.sub(
+            r"^(帮我|帮忙|请|查看|查询|分析|看一下|看看|看|统计|计算|本次|这个|那个|最近|近)+",
+            "",
+            name,
+        )
+        name = re.sub(r"^(最近|近)?[一二三四五六七八九十半两0-9]+个?(天|周|月|年)", "", name)
+        name = re.sub(r"^(今天|昨天|本周|上周|本月|上月|今年|去年)", "", name)
+        name = re.sub(r"(的数据情况|的数据|的情况|情况|表现)$", "", name)
+        return name.strip("，,。；;：: 的")
+
+    def _is_invalid_named_clinic(self, name: str) -> bool:
+        if not name:
+            return True
+        if name in {"门店", "诊所", "院区", "店", "最近门店", "近门店"}:
+            return True
+        generic_terms = {"患者", "客户", "会员", "线索", "预约", "初诊", "复诊", "业务", "指标"}
+        if name in generic_terms:
+            return True
+        time_terms = ["最近", "今天", "昨天", "本周", "上周", "本月", "上月", "今年", "去年"]
+        if any(term in name for term in time_terms):
+            return True
+        if re.search(r"\d", name) and any(unit in name for unit in ("天", "周", "月", "年")):
+            return True
+        return False
 
     def _detect_address_scope(self, question: str) -> str:
         match = re.search(
@@ -1617,12 +1690,12 @@ class Agent1:
         if (analysis_context or {}).get("analysis_intent") == "root_cause_analysis":
             if time_range and clinic_scope:
                 return (
-                    f"验证 {time_range}、{', '.join(clinic_scope)} 的{metric_label}是否偏低，"
+                    f"验证 {time_range}、{', '.join(clinic_scope)}的{metric_label}是否偏低，"
                     "并定位原因和改善动作。"
                 )
             return f"用户希望解释{metric_label}偏低或异常的原因，但时间范围或门店范围仍需确认。"
         if time_range and clinic_scope:
-            return f"分析 {time_range}、{', '.join(clinic_scope)} 的{metric_label}表现并形成可交付报告。"
+            return f"分析 {time_range}、{', '.join(clinic_scope)}的{metric_label}表现并形成可交付报告。"
         return f"用户希望分析{metric_label}，但时间范围或门店范围仍需确认。"
 
     def _metric_label(self, metric: str, metric_definition: str = "") -> str:

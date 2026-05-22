@@ -1,5 +1,31 @@
 # Agent Collaboration Changelog
 
+## [2026-05-22 09:52] Agent1 具名门店口语范围修复
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `agents/agent1.py`
+  - `local_agent1_test.py`
+  - `tests/test_agent1_workflow.py`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：修复“查看仙乐斯的转化率”无法从原始问题识别门店范围、后续把“仙乐斯的”原样写入 `clinic_scope` 的问题。Agent1 现在会识别“X 的转化率/现金流/复诊率”等口语表达，并统一清洗上下文中的门店范围；本地对话在 LLM 已提供有效上下文更新时不再打印过期追问。
+- 前端影响：无
+- 后端影响：Agent1 澄清合同中的 `clinic_scope` 更准确，减少重复追问。
+- 接口影响：无新增接口；`task_contract.input_context.clinic_scope` 内容会更规范。
+- 数据库影响：无
+- 配置影响：无
+- 验证：
+  - `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.test_local_agent1_chat_suppresses_stale_llm_prompt_after_context_update tests.test_agent1_workflow.Agent1WorkflowTest.test_local_agent1_chat_does_not_reask_possessive_named_clinic tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_uses_possessive_named_clinic_from_original_question tests.test_agent1_workflow.Agent1WorkflowTest.test_prepare_task_cleans_possessive_clinic_scope_from_context`：通过
+  - `.venv/bin/python -m unittest discover -s tests`：通过，53 个测试
+  - `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`：通过
+  - `printf '查看仙乐斯的转化率\n1\n最近一个月\n' | .venv/bin/python local_agent1_test.py`：通过，真实 Graph API + DeepSeek 输出 `clinic_scope=["仙乐斯"]`
+  - `printf '查看仙乐斯门店的转化率\n1\n最近一个月\n' | .venv/bin/python local_agent1_test.py`：通过，真实 Graph API + DeepSeek 输出 `clinic_scope=["仙乐斯门店"]`
+  - `git diff --check`：通过
+- 遗留问题：
+  - 复杂别名、多个同名门店或真实门店 ID 消歧仍需要 Agent2 后续用 `nebula_graph_query` 和业务数据确认。
+
 ## [2026-05-22 09:21] Agent1 复用 Agent2 图谱工具
 
 - Agent：codex-gpt5
