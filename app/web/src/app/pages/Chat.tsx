@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { 
-  Sparkles, Send, Search, Activity, PieChart, Presentation,
-  Building, Stethoscope, Calendar, X, Database, ChevronDown,
-  Download, CheckSquare, Loader2, CheckCircle2, Eye, ChevronRight, ChevronLeft, Copy, Clock, FileText,
-  Settings2, Bookmark, Trash2
+import {
+  Sparkles, Send, Activity, PieChart, Presentation,
+  Calendar, X, Database, ChevronDown,
+  Download, CheckSquare, Loader2, CheckCircle2, Eye, ChevronRight, ChevronLeft, Copy, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx } from 'clsx';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
+import type { EChartsOption } from 'echarts';
+import { EChart } from '../components/charts/EChart';
 
 // Configuration
 const DEFAULT_PROMPTS = [
@@ -57,9 +57,194 @@ const RECENT_HISTORY = [
   }
 ];
 
+type BarChartPoint = {
+  name: string;
+  value: number;
+  ideal?: number;
+};
+
+type LineChartPoint = {
+  name: string;
+  rate: number;
+};
+
+function buildBarChartOption(data: BarChartPoint[]): EChartsOption {
+  return {
+    animation: false,
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'shadow',
+        shadowStyle: {
+          color: '#f8fafd',
+        },
+      },
+      backgroundColor: '#ffffff',
+      borderColor: '#e5e7eb',
+      borderWidth: 1,
+      textStyle: {
+        color: '#1f2937',
+        fontSize: 12,
+      },
+    },
+    grid: {
+      top: 16,
+      right: 12,
+      bottom: 20,
+      left: 24,
+      containLabel: true,
+    },
+    xAxis: {
+      type: 'category',
+      data: data.map((item) => item.name),
+      axisLine: {
+        show: false,
+      },
+      axisTick: {
+        show: false,
+      },
+      axisLabel: {
+        color: '#888888',
+        fontSize: 10,
+      },
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: {
+        show: false,
+      },
+      axisTick: {
+        show: false,
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#f0f0f0',
+          type: 'dashed',
+        },
+      },
+      axisLabel: {
+        color: '#888888',
+        fontSize: 10,
+      },
+    },
+    series: [
+      {
+        name: '周留存率(%)',
+        type: 'bar',
+        barMaxWidth: 30,
+        data: data.map((item) => ({
+          value: item.value,
+          itemStyle: {
+            color: item.value < 80 ? '#f43f5e' : '#1a73e8',
+            borderRadius: [4, 4, 0, 0],
+          },
+        })),
+        markLine: data.some((item) => typeof item.ideal === 'number')
+          ? {
+              symbol: 'none',
+              label: {
+                formatter: '目标',
+                color: '#64748b',
+                fontSize: 11,
+              },
+              lineStyle: {
+                color: '#94a3b8',
+                type: 'dashed',
+              },
+              data: [
+                {
+                  yAxis: data.find((item) => typeof item.ideal === 'number')?.ideal ?? 0,
+                },
+              ],
+            }
+          : undefined,
+      },
+    ],
+  };
+}
+
+function buildLineChartOption(data: LineChartPoint[]): EChartsOption {
+  return {
+    animation: false,
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: '#ffffff',
+      borderColor: '#e5e7eb',
+      borderWidth: 1,
+      textStyle: {
+        color: '#1f2937',
+        fontSize: 12,
+      },
+    },
+    grid: {
+      top: 16,
+      right: 12,
+      bottom: 20,
+      left: 24,
+      containLabel: true,
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: data.map((item) => item.name),
+      axisLine: {
+        show: false,
+      },
+      axisTick: {
+        show: false,
+      },
+      axisLabel: {
+        color: '#888888',
+        fontSize: 10,
+      },
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: {
+        show: false,
+      },
+      axisTick: {
+        show: false,
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#f0f0f0',
+          type: 'dashed',
+        },
+      },
+      axisLabel: {
+        color: '#888888',
+        fontSize: 10,
+      },
+    },
+    series: [
+      {
+        name: '预估流失率(%)',
+        type: 'line',
+        smooth: true,
+        data: data.map((item) => item.rate),
+        symbol: 'circle',
+        symbolSize: 8,
+        lineStyle: {
+          color: '#10b981',
+          width: 3,
+        },
+        itemStyle: {
+          color: '#10b981',
+          borderColor: '#ffffff',
+          borderWidth: 2,
+        },
+        areaStyle: {
+          color: 'rgba(16, 185, 129, 0.08)',
+        },
+      },
+    ],
+  };
+}
+
 export function Chat() {
   const [messages, setMessages] = useState<any[]>([]);
-  const [prompts, setPrompts] = useState<any[]>(DEFAULT_PROMPTS);
+  const [prompts] = useState<any[]>(DEFAULT_PROMPTS);
   const [inputText, setInputText] = useState('');
   const [previewPpt, setPreviewPpt] = useState<any | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -378,31 +563,14 @@ export function Chat() {
                                 </div>
                                 {step.chart && (
                                   <div className="ml-6 mr-2 h-40 bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
-                                    {step.chart.type === 'bar' ? (
-                                      <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={step.chart.data} margin={{ top: 10, right: 10, left: -25, bottom: 0 }} id={`bar-${msg.id}-${idx}`}>
-                                          <CartesianGrid key="grid" strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                          <XAxis key="xaxis" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} dy={5} />
-                                          <YAxis key="yaxis" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
-                                          <RechartsTooltip key="tooltip" cursor={{ fill: '#f8fafd' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }} />
-                                          <Bar key="bar" dataKey="value" name="周留存率(%)" fill="#1a73e8" radius={[4, 4, 0, 0]} maxBarSize={30}>
-                                            {step.chart.data.map((entry: any, index: number) => (
-                                              <Cell key={`cell-${msg.id}-${idx}-${index}`} fill={entry.value < 80 ? '#f43f5e' : '#1a73e8'} />
-                                            ))}
-                                          </Bar>
-                                        </BarChart>
-                                      </ResponsiveContainer>
-                                    ) : (
-                                      <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={step.chart.data} margin={{ top: 10, right: 10, left: -25, bottom: 0 }} id={`line-${msg.id}-${idx}`}>
-                                          <CartesianGrid key="grid" strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                          <XAxis key="xaxis" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} dy={5} />
-                                          <YAxis key="yaxis" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
-                                          <RechartsTooltip key="tooltip" cursor={{ stroke: '#e8f0fe', strokeWidth: 2 }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }} />
-                                          <Line key="line" type="monotone" dataKey="rate" name="预估流失率(%)" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
-                                        </LineChart>
-                                      </ResponsiveContainer>
-                                    )}
+                                    <EChart
+                                      option={
+                                        step.chart.type === 'bar'
+                                          ? buildBarChartOption(step.chart.data as BarChartPoint[])
+                                          : buildLineChartOption(step.chart.data as LineChartPoint[])
+                                      }
+                                      style={{ height: '100%' }}
+                                    />
                                   </div>
                                 )}
                               </div>
@@ -601,7 +769,7 @@ export function Chat() {
       <div className="flex-1 overflow-y-auto p-4 pt-6 relative">
         <div className="absolute top-8 bottom-0 left-[23px] w-px bg-gray-200/80 z-0"></div>
         <div className="space-y-6 relative z-10">
-          {timelineItems.map((item, index) => {
+          {timelineItems.map((item) => {
             const isChart = item.type === 'chart';
             const isTodo = item.type === 'attachment' && item.data.type === 'todo';
             const history = item.data;
@@ -624,31 +792,14 @@ export function Chat() {
                       {history.text}
                     </div>
                     <div className="h-40 w-full">
-                      {history.chart.type === 'bar' ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={history.chart.data} margin={{ top: 10, right: 10, left: -25, bottom: 0 }} id={`side-bar-${index}`}>
-                            <CartesianGrid key="grid" strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                            <XAxis key="xaxis" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} dy={5} />
-                            <YAxis key="yaxis" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
-                            <RechartsTooltip key="tooltip" cursor={{ fill: '#f8fafd' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }} />
-                            <Bar key="bar" dataKey="value" name="周留存率(%)" fill="#1a73e8" radius={[4, 4, 0, 0]} maxBarSize={30}>
-                              {history.chart.data.map((entry: any, i: number) => (
-                                <Cell key={`cell-side-${index}-${i}`} fill={entry.value < 80 ? '#f43f5e' : '#1a73e8'} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={history.chart.data} margin={{ top: 10, right: 10, left: -25, bottom: 0 }} id={`side-line-${index}`}>
-                            <CartesianGrid key="grid" strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                            <XAxis key="xaxis" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} dy={5} />
-                            <YAxis key="yaxis" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
-                            <RechartsTooltip key="tooltip" cursor={{ stroke: '#e8f0fe', strokeWidth: 2 }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }} />
-                            <Line key="line" type="monotone" dataKey="rate" name="预估流失率(%)" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      )}
+                      <EChart
+                        option={
+                          history.chart.type === 'bar'
+                            ? buildBarChartOption(history.chart.data as BarChartPoint[])
+                            : buildLineChartOption(history.chart.data as LineChartPoint[])
+                        }
+                        style={{ height: '100%' }}
+                      />
                     </div>
                   </div>
                 ) : isTodo ? (

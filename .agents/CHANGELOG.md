@@ -553,6 +553,32 @@
   - `MEDGRAPH_JSON_PATH` 是否长期保留为离线 fallback 仍待定
   - 指标口径在图谱中的完整度仍待业务确认
 
+## [2026-05-22 10:18] Chat 页面接入 ECharts
+
+- Agent：codex-gpt5
+- 状态：完成
+- 修改文件：
+  - `app/web/package.json`
+  - `app/web/package-lock.json`
+  - `app/web/src/app/components/charts/EChart.tsx`
+  - `app/web/src/app/pages/Chat.tsx`
+  - `docs/superpowers/specs/2026-05-22-echarts-chat-design.md`
+  - `docs/superpowers/plans/2026-05-22-echarts-chat-plan.md`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 变更摘要：为 `app/web` 新增 `echarts` 与 `echarts-for-react` 依赖，抽离通用 `EChart` 基础组件，并将 `Chat.tsx` 中分析过程和右侧时间线的 demo 柱状图/折线图切换为 ECharts 渲染
+- 前端影响：`Chat` 页面后续可基于通用组件继续扩展更多 ECharts 图表；当前消息结构 `chart: { type, data }` 保持不变
+- 后端影响：无
+- 接口影响：无
+- 数据库影响：无
+- 配置影响：新增前端依赖 `echarts` 与 `echarts-for-react`
+- 验证：
+  - `npm install echarts echarts-for-react --registry=https://registry.npmjs.org --fetch-timeout=600000 --fetch-retries=5 --fetch-retry-maxtimeout=120000`：通过
+  - `npm ls echarts echarts-for-react`：通过
+  - `npm run build`：通过
+- 遗留问题：
+  - `recharts` 依赖仍保留，若确认项目其他页面不再使用，可后续统一清理
+
 ## [2026-05-22 09:11] 启动 app/web 前端项目
 
 - Agent：codex-gpt5
