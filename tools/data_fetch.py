@@ -2,14 +2,17 @@
 """
 数据库取数工具 - 真实连接版本
 - 基于 SQLAlchemy + PyMySQL
-- 自动连接池
+- 自动连接池（带连接验证）
 - 只允许 SELECT 查询
 - 对患者姓名、电话等字段自动脱敏
+- 支持连接重试和自动重连
 """
 
 import os
+import time
 from typing import List, Dict
 from sqlalchemy import create_engine, text, pool
+from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv
 from crewai.tools import BaseTool
 
@@ -81,14 +84,26 @@ def _mask_row(row: Dict, columns: List[str]) -> Dict:
             row[col] = _mask_value(str(row[col]))
     return row
 
-def execute_query(sql: str, db: str = "default") -> List[Dict]:
+def _reconnect_engine(db: str):
+    """重新创建指定数据库的连接引擎"""
+    global _engines
+    if db in _engines:
+        try:
+            _engines[db].dispose()
+        except:
+            pass
+        _engines[db] = None
+    return _get_engine(db)
+
+def execute_query(sql: str, db: str = "default", max_retries: int = 3) -> List[Dict]:
     """
     执行 SELECT 查询，返回字典列表，自动脱敏敏感字段。
-    非 SELECT 语句会被拦截。
+    非 SELECT 语句会被拦截。支持连接重试机制。
     
     Args:
         sql: SQL 查询语句
         db: 数据库标识，"default" 表示业务库，"dwd" 表示数仓
+        max_retries: 最大重试次数，默认 3 次
     """
     # 1. 安全拦截：只允许只读查询
     clean_sql = sql.strip()
@@ -100,20 +115,40 @@ def execute_query(sql: str, db: str = "default") -> List[Dict]:
         raise ValueError(f"SQL 包含禁止的关键字，已被拦截。")
 
     engine = _get_engine(db)
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(text(clean_sql))
-            # 获取列名
-            columns = list(result.keys()) if hasattr(result, 'keys') else result.keys()
-            rows = []
-            for row in result:
-                row_dict = dict(zip(columns, row))
-                # 脱敏处理
-                row_dict = _mask_row(row_dict, columns)
-                rows.append(row_dict)
-            return rows
-    except Exception as e:
-        raise Exception(f"数据库查询失败: {str(e)}") from e
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            with engine.connect() as conn:
+                # 验证连接有效性
+                conn.execute(text("SELECT 1"))
+                
+                result = conn.execute(text(clean_sql))
+                # 获取列名
+                columns = list(result.keys()) if hasattr(result, 'keys') else result.keys()
+                rows = []
+                for row in result:
+                    row_dict = dict(zip(columns, row))
+                    # 脱敏处理
+                    row_dict = _mask_row(row_dict, columns)
+                    rows.append(row_dict)
+                return rows
+        except OperationalError as e:
+            last_exception = e
+            if "Lost connection" in str(e) or "2013" in str(e):
+                # 连接丢失，尝试重新连接
+                if attempt < max_retries - 1:
+                    print(f"⚠️  数据库连接丢失，正在尝试重新连接（第 {attempt + 1} 次重试）...")
+                    engine = _reconnect_engine(db)
+                    time.sleep(1)  # 等待 1 秒后重试
+                    continue
+            raise Exception(f"数据库查询失败: {str(e)}") from e
+        except Exception as e:
+            last_exception = e
+            raise Exception(f"数据库查询失败: {str(e)}") from e
+    
+    if last_exception:
+        raise Exception(f"数据库查询失败（已重试 {max_retries} 次）: {str(last_exception)}")
 
 class DataFetchTool(BaseTool):
     name: str = "data_fetch"
