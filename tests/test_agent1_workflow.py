@@ -7,7 +7,12 @@ from io import StringIO
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from agents.agent1 import Agent1, Agent1LLMClarifier, build_scheduler_agent, run_agent1_clarification
+from agents.agent1 import (
+    Agent1,
+    Agent1LLMClarifier,
+    build_scheduler_agent,
+    run_agent1_clarification,
+)
 from integration import run_workflow
 from local_agent1_test import (
     _answer_meta_question,
@@ -1388,7 +1393,6 @@ class Agent1WorkflowTest(unittest.TestCase):
             result["clarification_questions"][0]["source"],
             "nebula_graph_query",
         )
-
 
 if __name__ == "__main__":
     unittest.main()

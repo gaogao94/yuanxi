@@ -1,0 +1,93 @@
+[
+  {
+    "_comment": "示例知识候选项。保留 1 条用于说明 Agent3 如何把经验沉淀记录为待人工审核的 knowledge candidate。",
+    "candidate_id": "knowledge-candidate-example-001",
+    "created_at": "2026-05-22T00:00:00+00:00",
+    "review_status": "pending_review",
+    "run_id": "run_example_202605220000000000",
+    "task_id": "task_example_001",
+    "candidate_type": "experience_rule",
+    "category": "insight_missing_samples",
+    "title": "本轮缺少问题样本，经验沉淀基础偏弱",
+    "content": "检查是否存在问题漏报，保证后续复盘有足够样本；如果主链路长期没有问题记录，需要人工确认是流程稳定还是上报缺失。",
+    "evidence": [
+      "problem_records 为空。"
+    ],
+    "source_section": "insight_refinement"
+  },
+  {
+    "candidate_id": "knowledge-candidate-2",
+    "created_at": "2026-05-22T03:24:41.577098+00:00",
+    "review_status": "pending_review",
+    "run_id": "run_20260522032441570097",
+    "task_id": "task_3a7ebc4744c8",
+    "candidate_type": "experience_rule",
+    "category": "insight_missing_samples",
+    "title": "本轮缺少问题样本，经验沉淀基础偏弱",
+    "content": "检查是否存在问题漏报，保证后续复盘有足够样本。",
+    "evidence": [
+      "problem_records 为空。"
+    ],
+    "source_section": "insight_refinement"
+  },
+  {
+    "candidate_id": "knowledge-candidate-3",
+    "created_at": "2026-05-22T03:24:42.490920+00:00",
+    "review_status": "pending_review",
+    "run_id": "run_20260522032442446091",
+    "task_id": "task_3a7ebc4744c8",
+    "candidate_type": "experience_rule",
+    "category": "insight_missing_samples",
+    "title": "本轮缺少问题样本，经验沉淀基础偏弱",
+    "content": "检查是否存在问题漏报，保证后续复盘有足够样本。",
+    "evidence": [
+      "problem_records 为空。"
+    ],
+    "source_section": "insight_refinement"
+  },
+  {
+    "candidate_id": "knowledge-candidate-4",
+    "created_at": "2026-05-22T03:26:55.969203+00:00",
+    "review_status": "pending_review",
+    "run_id": "run_20260522032655964204",
+    "task_id": "task_3a7ebc4744c8",
+    "candidate_type": "experience_rule",
+    "category": "insight_missing_samples",
+    "title": "本轮缺少问题样本，经验沉淀基础偏弱",
+    "content": "检查是否存在问题漏报，保证后续复盘有足够样本。",
+    "evidence": [
+      "problem_records 为空。"
+    ],
+    "source_section": "insight_refinement"
+  },
+  {
+    "candidate_id": "knowledge-candidate-5",
+    "created_at": "2026-05-22T03:33:18.013262+00:00",
+    "review_status": "pending_review",
+    "run_id": "run_20260522033317989122",
+    "task_id": "task_3a7ebc4744c8",
+    "candidate_type": "experience_rule",
+    "category": "insight_missing_samples",
+    "title": "本轮缺少问题样本，经验沉淀基础偏弱",
+    "content": "检查是否存在问题漏报，保证后续复盘有足够样本。",
+    "evidence": [
+      "problem_records 为空。"
+    ],
+    "source_section": "insight_refinement"
+  },
+  {
+    "candidate_id": "knowledge-candidate-6",
+    "created_at": "2026-05-22T03:33:18.088865+00:00",
+    "review_status": "pending_review",
+    "run_id": "run_20260522033318063877",
+    "task_id": "task_3a7ebc4744c8",
+    "candidate_type": "experience_rule",
+    "category": "insight_missing_samples",
+    "title": "本轮缺少问题样本，经验沉淀基础偏弱",
+    "content": "检查是否存在问题漏报，保证后续复盘有足够样本。",
+    "evidence": [
+      "problem_records 为空。"
+    ],
+    "source_section": "insight_refinement"
+  }
+]
