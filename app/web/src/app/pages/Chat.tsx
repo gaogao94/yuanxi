@@ -1,255 +1,142 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
-  Sparkles, Send, Activity, PieChart, Presentation,
-  Calendar, X, Database, ChevronDown,
-  Download, CheckSquare, Loader2, CheckCircle2, Eye, ChevronRight, ChevronLeft, Copy, Clock
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { clsx } from 'clsx';
-import type { EChartsOption } from 'echarts';
-import { EChart } from '../components/charts/EChart';
-import { sendChatMessage, type ChatResponse, type ClarificationQuestion, type ChartData } from '../../api/chat';
+  Activity,
+  Calendar,
+  CheckSquare,
+  Clock,
+  Download,
+  Eye,
+  PieChart,
+  Presentation,
+  Sparkles,
+  X,
+} from "lucide-react";
+import { clsx } from "clsx";
 
-// Configuration
-const DEFAULT_PROMPTS = [
-  { 
-    id: 'analyze_renewal', title: '分析续卡率低的原因', icon: Activity, color: 'text-blue-500', isCustom: false,
-    text: '帮我分析极橙仙乐斯店近30天续卡率低的原因'
+import { EChart } from "../components/charts/EChart";
+import { ChatComposer } from "../components/chat/ChatComposer";
+import { ChatMessageList } from "../components/chat/ChatMessageList";
+import { useChatSession } from "../hooks/useChatSession";
+import type { ApiArtifact } from "../types/api";
+import type { ChartChatMessage } from "../types/chat";
+
+type PromptItem = {
+  id: string;
+  title: string;
+  icon: typeof Activity;
+  color: string;
+  text: string;
+};
+
+const DEFAULT_PROMPTS: PromptItem[] = [
+  {
+    id: "analyze_renewal",
+    title: "分析续卡率低的原因",
+    icon: Activity,
+    color: "text-blue-500",
+    text: "帮我分析极橙仙乐斯店近30天续卡率低的原因",
   },
-  { 
-    id: 'analyze_conversion', title: '分析初诊转化漏斗', icon: PieChart, color: 'text-purple-500', isCustom: false,
-    text: '帮我分析极橙徐汇店上个月的初诊转化漏斗'
+  {
+    id: "analyze_conversion",
+    title: "分析初诊转化漏斗",
+    icon: PieChart,
+    color: "text-purple-500",
+    text: "帮我分析极橙徐汇店上个月的初诊转化漏斗",
   },
-  { 
-    id: 'generate_report', title: '生成本月经营报告', icon: Presentation, color: 'text-orange-500', isCustom: false,
-    text: '帮我生成全部门诊近30天的经营PPT报告'
+  {
+    id: "generate_report",
+    title: "生成本月经营报告",
+    icon: Presentation,
+    color: "text-orange-500",
+    text: "帮我生成全部门诊近30天的经营PPT报告",
   },
-  { 
-    id: 'check_appointment', title: '查看近期预约饱和度', icon: Calendar, color: 'text-green-500', isCustom: false,
-    text: '查看极橙仙乐斯店刘主任近7天的预约饱和度'
+  {
+    id: "check_appointment",
+    title: "查看近期预约饱和度",
+    icon: Calendar,
+    color: "text-green-500",
+    text: "查看极橙仙乐斯店刘主任近7天的预约饱和度",
   },
-  { 
-    id: 'analyze_lost', title: '流失高风险患者预警', icon: Activity, color: 'text-rose-500', isCustom: false,
-    text: '预警极橙大宁店第一季度流失高风险患者，并生成待办SOP'
+  {
+    id: "analyze_lost",
+    title: "流失高风险患者预警",
+    icon: Activity,
+    color: "text-rose-500",
+    text: "预警极橙大宁店第一季度流失高风险患者，并生成待办SOP",
   },
-  { 
-    id: 'doctor_performance', title: '核心医生业绩环比分析', icon: PieChart, color: 'text-indigo-500', isCustom: false,
-    text: '分析极橙仙乐斯店张大夫今年的业绩环比数据'
+  {
+    id: "doctor_performance",
+    title: "核心医生业绩环比分析",
+    icon: PieChart,
+    color: "text-indigo-500",
+    text: "分析极橙仙乐斯店张大夫今年的业绩环比数据",
   },
 ];
 
-const RECENT_HISTORY = [
+const RECENT_HISTORY: ApiArtifact[] = [
   {
-    id: 'h1', type: 'ppt', title: '极橙大宁店-流失患者分析报告.pptx', date: '今天 10:30', size: '2.4 MB', icon: Presentation, color: 'text-orange-500',
+    id: "history-ppt-1",
+    type: "ppt",
+    title: "极橙大宁店-流失患者分析报告.pptx",
+    createdAt: "今天 10:30",
+    size: "2.4 MB",
     preview: [
       "幻灯片 1：本季度流失率概览\n- 大宁店流失率：12%\n- 显著改善：复诊等待时间减少",
-      "幻灯片 2：重点改进建议\n- 继续加强正畸复诊提醒\n- 完善初诊未成交患者的7天追踪SOP"
-    ]
+      "幻灯片 2：重点改进建议\n- 继续加强正畸复诊提醒\n- 完善初诊未成交患者的7天追踪SOP",
+    ],
   },
   {
-    id: 'h2', type: 'todo', title: '极橙徐汇店-前台回访规范(SOP)', date: '昨天 16:45', size: '5 项待办', icon: CheckSquare, color: 'text-green-500',
+    id: "history-todo-1",
+    type: "todo",
+    title: "极橙徐汇店-前台回访规范（SOP）",
+    createdAt: "昨天 16:45",
+    size: "5 项待办",
     preview: [
       "[ ] 确认每日预约名单并发送提醒",
       "[ ] 发送复诊提醒微信（正畸及种植患者）",
       "[ ] 电话回访逾期未归患者，记录未归原因",
-      "[ ] 整理患者反馈记录并录入HIS系统",
-      "[ ] 每日晨会播报前日客诉及处理进度"
-    ]
-  }
+      "[ ] 整理患者反馈记录并录入 HIS 系统",
+      "[ ] 每日晨会播报前日客诉及处理进度",
+    ],
+  },
 ];
 
-type BarChartPoint = {
-  name: string;
-  value: number;
-  ideal?: number;
+const artifactIconMap = {
+  ppt: Presentation,
+  todo: CheckSquare,
+  report: Presentation,
+  file: Presentation,
 };
 
-type LineChartPoint = {
-  name: string;
-  rate: number;
-};
-
-function buildBarChartOption(data: BarChartPoint[]): EChartsOption {
-  return {
-    animation: false,
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: {
-        type: 'shadow',
-        shadowStyle: {
-          color: '#f8fafd',
-        },
-      },
-      backgroundColor: '#ffffff',
-      borderColor: '#e5e7eb',
-      borderWidth: 1,
-      textStyle: {
-        color: '#1f2937',
-        fontSize: 12,
-      },
-    },
-    grid: {
-      top: 16,
-      right: 12,
-      bottom: 20,
-      left: 24,
-      containLabel: true,
-    },
-    xAxis: {
-      type: 'category',
-      data: data.map((item) => item.name),
-      axisLine: {
-        show: false,
-      },
-      axisTick: {
-        show: false,
-      },
-      axisLabel: {
-        color: '#888888',
-        fontSize: 10,
-      },
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: {
-        show: false,
-      },
-      axisTick: {
-        show: false,
-      },
-      splitLine: {
-        lineStyle: {
-          color: '#f0f0f0',
-          type: 'dashed',
-        },
-      },
-      axisLabel: {
-        color: '#888888',
-        fontSize: 10,
-      },
-    },
-    series: [
-      {
-        name: '周留存率(%)',
-        type: 'bar',
-        barMaxWidth: 30,
-        data: data.map((item) => ({
-          value: item.value,
-          itemStyle: {
-            color: item.value < 80 ? '#f43f5e' : '#1a73e8',
-            borderRadius: [4, 4, 0, 0],
-          },
-        })),
-        markLine: data.some((item) => typeof item.ideal === 'number')
-          ? {
-              symbol: 'none',
-              label: {
-                formatter: '目标',
-                color: '#64748b',
-                fontSize: 11,
-              },
-              lineStyle: {
-                color: '#94a3b8',
-                type: 'dashed',
-              },
-              data: [
-                {
-                  yAxis: data.find((item) => typeof item.ideal === 'number')?.ideal ?? 0,
-                },
-              ],
-            }
-          : undefined,
-      },
-    ],
-  };
-}
-
-function buildLineChartOption(data: LineChartPoint[]): EChartsOption {
-  return {
-    animation: false,
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: '#ffffff',
-      borderColor: '#e5e7eb',
-      borderWidth: 1,
-      textStyle: {
-        color: '#1f2937',
-        fontSize: 12,
-      },
-    },
-    grid: {
-      top: 16,
-      right: 12,
-      bottom: 20,
-      left: 24,
-      containLabel: true,
-    },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: data.map((item) => item.name),
-      axisLine: {
-        show: false,
-      },
-      axisTick: {
-        show: false,
-      },
-      axisLabel: {
-        color: '#888888',
-        fontSize: 10,
-      },
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: {
-        show: false,
-      },
-      axisTick: {
-        show: false,
-      },
-      splitLine: {
-        lineStyle: {
-          color: '#f0f0f0',
-          type: 'dashed',
-        },
-      },
-      axisLabel: {
-        color: '#888888',
-        fontSize: 10,
-      },
-    },
-    series: [
-      {
-        name: '预估流失率(%)',
-        type: 'line',
-        smooth: true,
-        data: data.map((item) => item.rate),
-        symbol: 'circle',
-        symbolSize: 8,
-        lineStyle: {
-          color: '#10b981',
-          width: 3,
-        },
-        itemStyle: {
-          color: '#10b981',
-          borderColor: '#ffffff',
-          borderWidth: 2,
-        },
-        areaStyle: {
-          color: 'rgba(16, 185, 129, 0.08)',
-        },
-      },
-    ],
-  };
-}
+type TimelineItem =
+  | {
+      id: string;
+      type: "chart";
+      title: string;
+      createdAt: string;
+      option: ChartChatMessage["option"];
+    }
+  | {
+      id: string;
+      type: "artifact";
+      createdAt: string;
+      artifact: ApiArtifact;
+      isSession: boolean;
+    };
 
 export function Chat() {
-  const [messages, setMessages] = useState<any[]>([]);
-  const [prompts] = useState<any[]>(DEFAULT_PROMPTS);
-  const [inputText, setInputText] = useState('');
-  const [previewPpt, setPreviewPpt] = useState<any | null>(null);
-  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [inputText, setInputText] = useState("");
+  const [previewArtifact, setPreviewArtifact] = useState<ApiArtifact | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const {
+    messages,
+    stage,
+    isSubmitting,
+    activeClarificationId,
+    submitQuestion,
+    answerClarification,
+  } = useChatSession();
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -257,713 +144,297 @@ export function Chat() {
     }
   }, [messages]);
 
-  const handleSelectPrompt = (prompt: any) => {
-    setInputText(prompt.text);
-  };
-
-  const handleViewHistory = (item: any) => {
-    if (item.type === 'ppt') {
-      setPreviewPpt(item);
-      return;
-    }
-    setMessages(prev => [
-      ...prev,
-      { id: Date.now().toString(), role: 'user', text: `查看历史待办：${item.title}` },
-      {
-        id: Date.now().toString() + '-ast',
-        role: 'assistant',
-        text: `这是您之前生成的记录：**${item.title}**\n创建时间：${item.date}`,
-        attachments: [item]
-      }
-    ]);
-  };
-
-  const handleSend = async (overrideText?: string) => {
-    const textToSend = overrideText || inputText;
-    if (!textToSend.trim()) return;
-
-    const query = textToSend.trim();
-    const userMsg = {
-      id: Date.now().toString(),
-      role: 'user',
-      text: query,
-    };
-
-    setMessages(prev => [...prev, userMsg]);
-    setInputText('');
-
-    const assistantId = Date.now().toString() + '-assistant';
-
-    // Show analyzing state immediately
-    setMessages(prev => [...prev, {
-      id: assistantId,
-      role: 'assistant',
-      isAnalyzing: true,
-      thinking: [
-        { text: '正在连接分析引擎...' }
-      ]
-    }]);
-
-    try {
-      const result: ChatResponse = await sendChatMessage(query, conversationId);
-
-      if (!conversationId) {
-        setConversationId(result.conversation_id);
+  const timelineItems = useMemo<TimelineItem[]>(() => {
+    const sessionItems = messages.flatMap<TimelineItem>((message) => {
+      if (message.type === "chart") {
+        return [
+          {
+            id: message.id,
+            type: "chart",
+            title: message.title,
+            createdAt: message.createdAt ?? "刚刚",
+            option: message.option,
+          },
+        ];
       }
 
-      if (result.status === 'needs_clarification') {
-        // Agent1 requires clarification
-        setMessages(prev => prev.map(m => m.id === assistantId ? {
-          ...m,
-          isAnalyzing: false,
-          text: result.text,
-          options: result.clarification_questions.map(q => {
-            if (q.options.length > 0) {
-              return q.options[0];
-            }
-            return q.question;
-          }),
-          clarificationMeta: result.clarification_questions,
-        } : m));
-      } else {
-        // Completed workflow
-        const thinkingSteps = result.thinking.map(t => ({
-          text: t.text,
-          source: t.source,
-          chart: t.chart ? { type: t.chart.type, data: t.chart.data } : undefined,
+      if (message.type === "artifact") {
+        return message.artifacts.map((artifact) => ({
+          id: `${message.id}-${artifact.id}`,
+          type: "artifact" as const,
+          createdAt: artifact.createdAt ?? message.createdAt ?? "刚刚",
+          artifact,
+          isSession: true,
         }));
-
-        // Map charts from result
-        const charts = result.charts.map(c => ({
-          type: c.type,
-          data: c.data,
-        }));
-
-        // Map attachments
-        const attachments = result.attachments.map(att => ({
-          id: att.id,
-          type: att.type,
-          title: att.title,
-          size: att.size,
-          icon: att.type === 'ppt' ? Presentation : CheckSquare,
-          color: att.type === 'ppt' ? 'text-orange-500' : 'text-green-500',
-          preview: att.preview,
-          url: att.url,
-        }));
-
-        setMessages(prev => prev.map(m => m.id === assistantId ? {
-          ...m,
-          isAnalyzing: false,
-          thinking: thinkingSteps.length > 0 ? thinkingSteps : [{ text: '分析完成' }],
-          text: result.text,
-          charts: charts,
-          attachments: attachments,
-        } : m));
       }
-    } catch (err: any) {
-      // Show error in chat
-      setMessages(prev => prev.map(m => m.id === assistantId ? {
-        ...m,
-        isAnalyzing: false,
-        text: `分析过程中出现问题：${err.message || '未知错误'}。请稍后重试。`,
-        thinking: [],
-      } : m));
-    }
-  };
 
-  const handleOptionSelect = (msgId: string, option: string, meta: any) => {
-    // Disable options on the clarification message
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, options: undefined } : m));
-
-    // Send the user's selected option as a new message to the API
-    handleSend(option);
-  };
-
-  const timelineItems = useMemo(() => {
-    const items: any[] = [];
-    
-    // Add current session items first (Newest at the top)
-    [...messages].reverse().forEach(msg => {
-      // Current session attachments (PPTs, Todos)
-      if (msg.attachments) {
-        // Reverse attachments if needed, but usually they are displayed together
-        [...msg.attachments].reverse().forEach((att: any) => {
-          items.push({
-            type: 'attachment',
-            isSession: true,
-            data: { ...att, date: '刚刚', _sessionAttachmentId: `session-att-${msg.id}-${att.id}` }
-          });
-        });
-      }
-      
-      // Current session charts
-      if (msg.thinking) {
-        [...msg.thinking].reverse().forEach((step: any, idx: number) => {
-          if (step.chart) {
-            items.push({
-              type: 'chart',
-              isSession: true,
-              data: { ...step, date: '刚刚', id: `session-chart-${msg.id}-${idx}` }
-            });
-          }
-        });
-      }
+      return [];
     });
 
-    // Add static history items (Older)
-    RECENT_HISTORY.forEach(h => {
-      items.push({
-        type: 'attachment',
-        isSession: false,
-        data: h
-      });
-    });
+    const historyItems: TimelineItem[] = RECENT_HISTORY.map((artifact) => ({
+      id: artifact.id,
+      type: "artifact",
+      createdAt: artifact.createdAt ?? "较早",
+      artifact,
+      isSession: false,
+    }));
 
-    return items;
+    return [...sessionItems.reverse(), ...historyItems];
   }, [messages]);
 
+  const handleSubmit = async () => {
+    const value = inputText.trim();
+    if (!value) {
+      return;
+    }
+
+    if (stage === "clarifying" && activeClarificationId) {
+      await answerClarification(activeClarificationId, value);
+    } else {
+      await submitQuestion(value);
+    }
+
+    setInputText("");
+  };
+
+  const handleOpenArtifact = (artifact: ApiArtifact) => {
+    if (artifact.preview?.length) {
+      setPreviewArtifact(artifact);
+    }
+  };
+
+  const composerPlaceholder =
+    stage === "clarifying"
+      ? "请输入补充说明，或直接点击上方澄清选项..."
+      : "直接输入您的分析需求...";
+
   return (
-    <div className="flex-1 flex h-full relative overflow-hidden">
-      <div className="flex-1 flex flex-col h-full relative overflow-hidden bg-white">
-        <header className="h-[72px] border-b border-gray-100 flex items-center justify-between px-8 shrink-0 bg-white/80 backdrop-blur-md z-10">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-medium text-gray-800">续卡助手</h1>
-        </div>
-      </header>
+    <div className="relative flex h-full flex-1 overflow-hidden">
+      <div className="relative flex h-full flex-1 flex-col overflow-hidden bg-white">
+        <header className="z-10 flex h-[72px] shrink-0 items-center justify-between border-b border-gray-100 bg-white/80 px-8 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-medium text-gray-800">续卡助手</h1>
+          </div>
+        </header>
 
-      <div className="flex-1 overflow-y-auto p-8 space-y-6 scroll-smooth" ref={chatContainerRef}>
-        {messages.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center max-w-2xl mx-auto w-full mt-12 pb-20">
-            <div className="w-16 h-16 bg-gradient-to-br from-[#1a73e8] to-[#4285f4] rounded-[20px] flex items-center justify-center shadow-lg shadow-blue-500/20 mb-8">
-              <Sparkles className="w-8 h-8 text-white" />
+        <div className="flex-1 overflow-y-auto p-8 scroll-smooth" ref={chatContainerRef}>
+          {messages.length === 0 ? (
+            <div className="mx-auto mt-12 flex max-w-2xl flex-col items-center justify-center pb-20 text-center">
+              <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-[20px] bg-gradient-to-br from-[#1a73e8] to-[#4285f4] shadow-lg shadow-blue-500/20">
+                <Sparkles className="h-8 w-8 text-white" />
+              </div>
+              <h2 className="mb-3 text-2xl font-semibold text-gray-800">你好，我是口腔诊所续卡助手</h2>
+              <p className="text-[15px] text-gray-500">
+                我可以帮您串联澄清、执行分析、图表展示和报告输出，逐步完成一轮完整的经营分析流程。
+              </p>
             </div>
-            <h2 className="text-2xl font-semibold text-gray-800 mb-3">���好，我是口腔诊所续卡助手</h2>
-            <p className="text-gray-500 mb-10 text-center text-[15px]">
-              我可以帮您深度分析诊所运营数据、追踪患者复诊与续卡情况，并自动生成解决方案。
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-8 pb-60 max-w-4xl mx-auto w-full px-4">
-            {messages.map(msg => (
-              msg.role === 'user' ? (
-                <div key={msg.id} className="flex justify-end w-full">
-                  <div className="bg-[#f4f7fc] border border-[#e8f0fe] rounded-[24px] rounded-tr-sm p-5 max-w-[85%] shadow-sm">
-                    {msg.title && (
-                      <div className="text-[15px] font-medium text-gray-800 flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-[#1a73e8]" />
-                        {msg.title}
-                      </div>
-                    )}
-                    {msg.text && (
-                      <div className={clsx("text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap", msg.title && "mt-3")}>
-                        {msg.text}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div key={msg.id} className="flex gap-4 w-full max-w-3xl">
-                  <div className="w-10 h-10 rounded-[14px] bg-gradient-to-br from-[#1a73e8] to-[#4285f4] flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
-                    <Sparkles className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="flex-1 space-y-4 pt-1">
-                    {msg.thinking && (
-                      <div className="border border-gray-200 rounded-[20px] bg-[#f8fafd] overflow-hidden group">
-                        <details className="open:pb-1 group-details">
-                          <summary className="flex items-center justify-between p-3.5 cursor-pointer text-sm text-gray-600 hover:bg-gray-100/50 transition-colors list-none outline-none">
-                            <span className="flex items-center gap-2.5 font-medium">
-                              {msg.isAnalyzing ? (
-                                <Loader2 className="w-4 h-4 animate-spin text-[#1a73e8]" />
-                              ) : (
-                                <CheckCircle2 className="w-4 h-4 text-green-500" />
-                              )}
-                              分析过程 {msg.isAnalyzing ? '...' : '(完成)'}
-                            </span>
-                            <ChevronDown className="w-4 h-4 transition-transform group-open:-rotate-180 text-gray-400" />
-                          </summary>
-                          <div className="px-3.5 pb-3 pt-1 border-t border-gray-100/60 space-y-4">
-                            {msg.thinking.map((step: any, idx: number) => (
-                              <div key={`${msg.id}-step-${idx}`} className="flex flex-col gap-2.5">
-                                <div className="text-[13px] text-gray-600 flex items-start gap-2">
-                                  <span className="text-gray-400 mt-0.5 w-4 font-mono shrink-0">{idx + 1}.</span>
-                                  <div className="flex-1 leading-relaxed">
-                                    {step.text}
-                                    {step.source && (
-                                      <button className="inline-flex items-center gap-1 bg-[#e8f0fe] text-[#1a73e8] px-2 py-0.5 rounded-md border border-blue-100/50 hover:bg-blue-100 transition-colors ml-2 font-medium cursor-pointer">
-                                        <Database className="w-3 h-3" /> {step.source}
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                                {step.chart && (
-                                  <div className="ml-6 mr-2 h-40 bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
-                                    <EChart
-                                      option={
-                                        step.chart.type === 'bar'
-                                          ? buildBarChartOption(step.chart.data as BarChartPoint[])
-                                          : buildLineChartOption(step.chart.data as LineChartPoint[])
-                                      }
-                                      style={{ height: '100%' }}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      </div>
-                    )}
-                    
-                    {msg.text && (
-                      <div className="text-gray-800 text-[15px] leading-relaxed whitespace-pre-wrap font-sans">
-                        {msg.text}
-                      </div>
-                    )}
-
-                    {msg.options && (
-                      <div className="flex flex-col gap-2.5 pt-2">
-                        {msg.options.map((opt: string, idx: number) => (
-                          <button
-                            key={`opt-${msg.id}-${idx}`}
-                            onClick={() => handleOptionSelect(msg.id, opt, msg.meta)}
-                            className="text-left px-5 py-3 rounded-[16px] border border-blue-200 bg-[#f8fafd] text-[#1a73e8] text-[14px] hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer font-medium shadow-sm hover:shadow group w-full pr-10 relative flex items-center justify-between"
-                          >
-                            <span className="flex items-center gap-3">
-                              <span className="w-6 h-6 shrink-0 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">{String.fromCharCode(65 + idx)}</span>
-                              <span>{opt}</span>
-                            </span>
-                            <ChevronRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {msg.attachments && (
-                      <div className="flex flex-col gap-3 pt-2">
-                        {msg.attachments.map((att: any) => (
-                          <AttachmentCard key={att.id} att={att} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-white via-white/90 to-transparent pt-12 shrink-0 pointer-events-none z-10">
-        <div className="max-w-4xl mx-auto w-full relative pointer-events-auto flex flex-col justify-end px-4">
-          
-          {/* Prompts as tags above input */}
-          <div className="mb-4 relative w-full">
-            <div className="flex items-center gap-2.5 overflow-x-auto w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pb-1 pr-12">
-              {prompts.map(p => (
-                <button 
-                  key={p.id}
-                  onClick={() => handleSelectPrompt(p)}
-                  className={clsx(
-                    "shrink-0 px-4 py-2 bg-white/90 backdrop-blur-md border border-gray-200/80 rounded-full text-[13px] font-medium text-gray-700 hover:border-blue-300 transition-all flex items-center gap-2 shadow-sm hover:shadow-md hover:bg-white cursor-pointer",
-                    "hover:text-[#1a73e8]"
-                  )}
-                >
-                  <p.icon className={clsx("w-3.5 h-3.5", p.color)} />
-                  {p.title}
-                </button>
-              ))}
-            </div>
-            
-          </div>
-
-          <div 
-            className="bg-white border border-gray-200 shadow-[0_4px_20px_rgba(0,0,0,0.06)] rounded-[20px] p-2 relative z-10 w-full transition-shadow hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] flex items-end gap-2"
-          >
-            <textarea
-              value={inputText}
-              onChange={e => setInputText(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder="直接输入您的分析需求..."
-              className="flex-1 bg-transparent border-none px-4 py-3 text-[15px] text-gray-800 placeholder-gray-400 focus:outline-none resize-none min-h-[48px] max-h-[120px]"
-              rows={1}
+          ) : (
+            <ChatMessageList
+              messages={messages}
+              onClarificationAnswer={answerClarification}
+              onOpenArtifact={handleOpenArtifact}
             />
-            <button 
-              onClick={() => handleSend()} 
-              disabled={!inputText.trim()}
-              className="bg-[#1a73e8] hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-[#1a73e8] text-white w-[48px] h-[48px] rounded-xl flex items-center justify-center transition-colors cursor-pointer shrink-0"
-            >
-              <Send className="w-5 h-5 ml-0.5" />
-            </button>
+          )}
+        </div>
+
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-white via-white/90 to-transparent p-6 pt-12">
+          <div className="pointer-events-auto mx-auto flex w-full max-w-4xl flex-col justify-end px-4">
+            <div className="relative mb-4 w-full">
+              <div className="flex w-full items-center gap-2.5 overflow-x-auto pb-1 pr-12 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {DEFAULT_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt.id}
+                    type="button"
+                    onClick={() => setInputText(prompt.text)}
+                    className={clsx(
+                      "flex shrink-0 items-center gap-2 rounded-full border border-gray-200/80 bg-white/90 px-4 py-2 text-[13px] font-medium text-gray-700 shadow-sm transition-all hover:bg-white hover:text-[#1a73e8] hover:shadow-md",
+                    )}
+                  >
+                    <prompt.icon className={clsx("h-3.5 w-3.5", prompt.color)} />
+                    {prompt.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <ChatComposer
+              value={inputText}
+              onChange={setInputText}
+              onSubmit={handleSubmit}
+              disabled={isSubmitting}
+              placeholder={composerPlaceholder}
+            />
           </div>
         </div>
       </div>
 
-    </div>
-    
-    {/* PPT Preview Drawer */}
-    <AnimatePresence>
-      {previewPpt && (
-        <>
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-gray-900/10 backdrop-blur-[1px] z-20"
-            onClick={() => setPreviewPpt(null)}
-          />
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="absolute top-0 right-0 bottom-0 w-full sm:w-[560px] bg-white border-l border-gray-200 shadow-2xl z-30 flex flex-col"
-          >
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-100 shrink-0 gap-4">
-              <div className="flex items-center gap-3 w-full sm:w-auto overflow-hidden">
-                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
-                  <Presentation className="w-5 h-5" />
+      <AnimatePresence>
+        {previewArtifact ? (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-20 bg-gray-900/10 backdrop-blur-[1px]"
+              onClick={() => setPreviewArtifact(null)}
+            />
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              className="absolute right-0 top-0 bottom-0 z-30 flex w-full flex-col border-l border-gray-200 bg-white shadow-2xl sm:w-[560px]"
+            >
+              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-100 p-4 sm:p-6">
+                <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
+                    <Presentation className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1 overflow-hidden">
+                    <h3 className="truncate text-base font-semibold text-gray-800" title={previewArtifact.title}>
+                      {previewArtifact.title}
+                    </h3>
+                    <div className="mt-0.5 truncate text-sm text-gray-500">
+                      {previewArtifact.createdAt ?? "刚刚"}
+                      {previewArtifact.size ? ` · ${previewArtifact.size}` : ""}
+                    </div>
+                  </div>
                 </div>
-                <div className="overflow-hidden flex-1">
-                  <h3 className="text-base font-semibold text-gray-800 truncate" title={previewPpt.title}>{previewPpt.title}</h3>
-                  <div className="text-sm text-gray-500 mt-0.5 truncate">{previewPpt.date} · {previewPpt.size}</div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    className="flex cursor-pointer items-center gap-1.5 rounded-full bg-[#e8f0fe] px-4 py-2 text-sm font-medium text-[#1a73e8] transition-colors hover:bg-blue-100"
+                  >
+                    <Download className="h-4 w-4" /> 下载
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewArtifact(null)}
+                    className="cursor-pointer rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-[#1a73e8] bg-[#e8f0fe] hover:bg-blue-100 rounded-full transition-colors cursor-pointer">
-                  <Download className="w-4 h-4" /> 下载
-                </button>
-                <button 
-                  onClick={() => setPreviewPpt(null)}
-                  className="p-2 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-[#f8fafd] space-y-6">
-              {previewPpt.preview.map((slideText: string, idx: number) => {
-                const lines = slideText.split('\n');
-                const title = lines[0];
-                const content = lines.slice(1);
-                
-                return (
-                  <div key={idx} className="aspect-[16/9] bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col relative group">
-                    <div className="absolute inset-0 border-4 border-transparent group-hover:border-blue-500/20 transition-colors pointer-events-none z-10" />
-                    
-                    <div className="h-1.5 w-full bg-gradient-to-r from-orange-400 to-orange-500 shrink-0" />
-                    
-                    <div className="p-8 flex flex-col h-full">
-                      <h2 className="text-[22px] font-bold text-gray-800 mb-6 pb-4 border-b border-gray-100 leading-tight">
-                        {title}
-                      </h2>
-                      
-                      <div className="space-y-4 flex-1">
-                        {content.map((line, lineIdx) => {
-                          const cleanLine = line.replace(/^- /, '');
-                          if (!cleanLine.trim()) return null;
-                          
-                          return (
-                            <div key={lineIdx} className="flex items-start gap-3">
-                              <div className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-2 shrink-0" />
-                              <p className="text-[16px] text-gray-600 leading-relaxed">
-                                {cleanLine}
-                              </p>
-                            </div>
-                          );
-                        })}
+              <div className="flex-1 space-y-6 overflow-y-auto bg-[#f8fafd] p-6">
+                {(previewArtifact.preview ?? []).map((slideText, index) => {
+                  const lines = slideText.split("\n");
+                  const title = lines[0];
+                  const content = lines.slice(1);
+
+                  return (
+                    <div
+                      key={`${previewArtifact.id}-${index}`}
+                      className="group relative flex aspect-[16/9] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
+                    >
+                      <div className="pointer-events-none absolute inset-0 z-10 border-4 border-transparent transition-colors group-hover:border-blue-500/20" />
+                      <div className="h-1.5 w-full shrink-0 bg-gradient-to-r from-orange-400 to-orange-500" />
+                      <div className="flex h-full flex-col p-8">
+                        <h2 className="mb-6 border-b border-gray-100 pb-4 text-[22px] font-bold leading-tight text-gray-800">
+                          {title}
+                        </h2>
+                        <div className="flex-1 space-y-4">
+                          {content.length > 0 ? (
+                            content.map((line, lineIndex) => {
+                              const cleanLine = line.replace(/^- /, "");
+                              if (!cleanLine.trim()) return null;
+
+                              return (
+                                <div key={lineIndex} className="flex items-start gap-3">
+                                  <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500" />
+                                  <p className="text-[16px] leading-relaxed text-gray-600">{cleanLine}</p>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <p className="text-[16px] leading-relaxed text-gray-600">暂无更多预览内容。</p>
+                          )}
+                        </div>
+                        <div className="mt-auto flex items-end justify-between pt-4">
+                          <span className="text-sm font-medium text-gray-300">{index + 1}</span>
+                        </div>
                       </div>
-                      
-                      <div className="flex justify-between items-end mt-auto pt-4">
-                        <span className="text-sm font-medium text-gray-300">{idx + 1}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </>
+        ) : null}
+      </AnimatePresence>
+
+      <div className="z-10 hidden w-[320px] shrink-0 flex-col border-l border-gray-200/80 bg-gray-50 shadow-[-4px_0_24px_rgba(0,0,0,0.02)] md:flex">
+        <div className="sticky top-0 z-20 flex h-[72px] shrink-0 items-center justify-between border-b border-gray-200/80 bg-white/80 px-5 shadow-sm backdrop-blur-md">
+          <h3 className="flex items-center gap-2 text-[15px] font-medium text-gray-800">
+            <Activity className="h-4 w-4 text-[#1a73e8]" /> 工作台
+          </h3>
+        </div>
+        <div className="relative flex-1 overflow-y-auto p-4 pt-6">
+          <div className="absolute bottom-0 left-[23px] top-8 z-0 w-px bg-gray-200/80" />
+          <div className="relative z-10 space-y-6">
+            {timelineItems.map((item) => {
+              if (item.type === "chart") {
+                return (
+                  <div key={item.id} className="relative pl-8">
+                    <div className="absolute left-[3px] top-1 z-10 h-2 w-2 rounded-full bg-blue-400 ring-4 ring-[#f9fafb]" />
+                    <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-gray-500">
+                      <Clock className="h-3 w-3" />
+                      {item.createdAt}
+                    </div>
+                    <div className="rounded-[20px] border border-gray-200/60 bg-white p-4 shadow-sm">
+                      <div className="mb-3 flex items-center gap-1.5 text-[13px] font-medium text-gray-800">
+                        <PieChart className="h-3.5 w-3.5 text-blue-500" />
+                        {item.title}
+                      </div>
+                      <div className="h-40 w-full">
+                        <EChart option={item.option} style={{ height: "100%" }} />
                       </div>
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+              }
 
-    {/* Right History Panel - always visible on desktop, hidden on small screens */}
-    <div className="hidden md:flex w-[320px] border-l border-gray-200/80 bg-gray-50 flex-col shrink-0 z-10 transition-all duration-300 ease-in-out shadow-[-4px_0_24px_rgba(0,0,0,0.02)]">
-      <div className="h-[72px] px-5 border-b border-gray-200/80 bg-white/80 backdrop-blur-md shrink-0 sticky top-0 z-20 shadow-sm flex items-center justify-between">
-        <h3 className="text-[15px] font-medium text-gray-800 flex items-center gap-2">
-          <Activity className="w-4 h-4 text-[#1a73e8]" />
-          工作台
-        </h3>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4 pt-6 relative">
-        <div className="absolute top-8 bottom-0 left-[23px] w-px bg-gray-200/80 z-0"></div>
-        <div className="space-y-6 relative z-10">
-          {timelineItems.map((item) => {
-            const isChart = item.type === 'chart';
-            const isTodo = item.type === 'attachment' && item.data.type === 'todo';
-            const history = item.data;
-
-            return (
-              <div key={isChart ? history.id : (history._sessionAttachmentId || history.id)} className="relative pl-8">
-                {/* Timeline Dot */}
-                <div className="absolute left-[3px] top-1 w-2 h-2 rounded-full bg-blue-400 ring-4 ring-[#f9fafb] z-10"></div>
-                
-                {/* Time Label */}
-                <div className="mb-2 text-[11px] font-medium text-gray-500 flex items-center gap-1.5">
-                  <Clock className="w-3 h-3" />
-                  {history.date}
-                </div>
-
-                {isChart ? (
-                  <div className="bg-white rounded-[20px] p-4 border border-gray-200/60 shadow-sm hover:shadow-md transition-all">
-                    <div className="text-[13px] font-medium text-gray-800 mb-3 leading-snug flex items-center gap-1.5">
-                      <PieChart className="w-3.5 h-3.5 text-blue-500" />
-                      {history.text}
-                    </div>
-                    <div className="h-40 w-full">
-                      <EChart
-                        option={
-                          history.chart.type === 'bar'
-                            ? buildBarChartOption(history.chart.data as BarChartPoint[])
-                            : buildLineChartOption(history.chart.data as LineChartPoint[])
-                        }
-                        style={{ height: '100%' }}
-                      />
-                    </div>
+              const Icon = artifactIconMap[item.artifact.type] ?? Presentation;
+              return (
+                <div key={item.id} className="relative pl-8">
+                  <div className="absolute left-[3px] top-1 z-10 h-2 w-2 rounded-full bg-blue-400 ring-4 ring-[#f9fafb]" />
+                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-gray-500">
+                    <Clock className="h-3 w-3" />
+                    {item.createdAt}
                   </div>
-                ) : isTodo ? (
-                  <SidebarTodoCard history={history} />
-                ) : (
-                  <div className="bg-white rounded-[20px] border border-gray-200/60 shadow-sm hover:shadow-md hover:border-blue-200 flex flex-col group overflow-hidden transition-all">
-                    <div 
-                      onClick={() => handleViewHistory(history)}
-                      className="flex items-start gap-3 p-4 cursor-pointer hover:bg-gray-50/50 transition-colors"
-                    >
-                      <div className={clsx("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105", history.color, 'bg-orange-50')}>
-                        <history.icon className="w-5 h-5" />
+                  <div className="overflow-hidden rounded-[20px] border border-gray-200/60 bg-white shadow-sm transition-all hover:border-blue-200 hover:shadow-md">
+                    <div className="flex cursor-pointer items-start gap-3 p-4 transition-colors hover:bg-gray-50/50" onClick={() => handleOpenArtifact(item.artifact)}>
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
+                        <Icon className="h-5 w-5" />
                       </div>
-                      <div className="flex-1 overflow-hidden pt-0.5">
-                        <div className="text-[13px] font-medium text-gray-800 line-clamp-2 leading-snug group-hover:text-[#1a73e8] transition-colors">{history.title}</div>
-                        <div className="text-[11px] text-gray-400 mt-1.5 flex items-center gap-2">
-                          <span className="text-[10px] bg-gray-50 px-1.5 py-0.5 rounded text-gray-500">{history.size}</span>
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <div className="line-clamp-2 text-[13px] font-medium leading-snug text-gray-800">{item.artifact.title}</div>
+                        <div className="mt-1.5 flex items-center gap-2 text-[11px] text-gray-400">
+                          <span className="rounded bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-500">{item.artifact.size ?? "可预览"}</span>
+                          {item.isSession ? <span className="text-blue-500">本轮输出</span> : null}
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 px-3 pb-3">
-                      <button 
-                        onClick={() => handleViewHistory(history)}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[12px] font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 hover:text-gray-900 transition-colors cursor-pointer"
+                      <button
+                        type="button"
+                        onClick={() => handleOpenArtifact(item.artifact)}
+                        className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-gray-50 py-2 text-[12px] font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
                       >
-                        <Eye className="w-3.5 h-3.5" /> 预览
+                        <Eye className="h-3.5 w-3.5" /> 预览
                       </button>
-                      <button 
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[12px] font-medium text-[#1a73e8] bg-[#e8f0fe] hover:bg-blue-100 transition-colors cursor-pointer"
+                      <button
+                        type="button"
+                        className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#e8f0fe] py-2 text-[12px] font-medium text-[#1a73e8] transition-colors hover:bg-blue-100"
                       >
-                        <Download className="w-3.5 h-3.5" /> 下载
+                        <Download className="h-3.5 w-3.5" /> 下载
                       </button>
                     </div>
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-
-
-
-    </div>
-  );
-}
-
-
-
-
-
-function SidebarTodoCard({ history }: { history: any }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    if (history.preview) {
-      const textToCopy = history.preview.map((t: string) => t.replace('[ ] ', '')).join('\n');
-      
-      const copyWithFallback = () => {
-        const textArea = document.createElement("textarea");
-        textArea.value = textToCopy;
-        textArea.style.position = "absolute";
-        textArea.style.left = "-999999px";
-        document.body.prepend(textArea);
-        textArea.select();
-        try {
-          document.execCommand('copy');
-        } catch (error) {
-          console.error(error);
-        } finally {
-          textArea.remove();
-        }
-      };
-
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(textToCopy).catch((err) => {
-          console.warn('Clipboard API blocked, using fallback.', err);
-          copyWithFallback();
-        });
-      } else {
-        copyWithFallback();
-      }
-      
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-[20px] p-4 border border-gray-200/60 shadow-sm hover:shadow-md hover:border-blue-200 transition-all">
-      <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-50">
-        <div className="flex items-center gap-2 overflow-hidden flex-1">
-          <div className="w-8 h-8 rounded-xl bg-green-50 text-green-600 flex items-center justify-center shrink-0">
-            <CheckSquare className="w-4 h-4" />
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <div className="text-[13px] font-medium text-gray-800 truncate">{history.title}</div>
-          </div>
-        </div>
-        <button 
-          onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium text-green-700 bg-white border border-green-200 hover:bg-green-50 rounded-full transition-colors cursor-pointer shrink-0"
-        >
-          {copied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? '已复制' : '复制'}
-        </button>
-      </div>
-      <div className="space-y-3.5">
-        {history.preview.map((task: string, i: number) => (
-          <div key={i} className="flex items-start gap-2.5 group/task cursor-pointer">
-            <div className="mt-0.5 w-4 h-4 rounded border border-gray-300 shrink-0 bg-white group-hover/task:border-green-400 transition-colors flex items-center justify-center">
-            </div>
-            <span className="text-[12px] text-gray-600 leading-[1.4] group-hover/task:text-gray-900 transition-colors flex-1">
-              {task.replace('[ ] ', '')}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AttachmentCard({ att }: { att: any }) {
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    if (att.preview) {
-      const textToCopy = att.preview.map((t: string) => t.replace('[ ] ', '')).join('\n');
-      
-      const copyWithFallback = () => {
-        const textArea = document.createElement("textarea");
-        textArea.value = textToCopy;
-        textArea.style.position = "absolute";
-        textArea.style.left = "-999999px";
-        document.body.prepend(textArea);
-        textArea.select();
-        try {
-          document.execCommand('copy');
-        } catch (error) {
-          console.error(error);
-        } finally {
-          textArea.remove();
-        }
-      };
-
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(textToCopy).catch((err) => {
-          console.warn('Clipboard API blocked, using fallback.', err);
-          copyWithFallback();
-        });
-      } else {
-        copyWithFallback();
-      }
-      
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  if (att.type === 'todo') {
-    return (
-      <div className="border border-gray-200 rounded-[24px] bg-white overflow-hidden w-full max-w-lg mt-2 shadow-sm">
-        <div className="bg-[#f0fdf4] border-b border-gray-100 p-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-green-700 font-medium text-[15px]">
-            <CheckSquare className="w-5 h-5" />
-            {att.title}
-          </div>
-          <button 
-            onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-700 bg-white border border-green-200 hover:bg-green-50 rounded-full transition-colors cursor-pointer shadow-sm"
-          >
-            {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            {copied ? '已复制' : '复制待办'}
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          {att.preview.map((task: string, i: number) => (
-            <div key={i} className="flex items-start gap-3 group">
-              <div className="mt-[3px] w-5 h-5 rounded border border-gray-300 flex-shrink-0 bg-white flex items-center justify-center group-hover:border-green-400 transition-colors shadow-sm" />
-              <span className="text-[14px] text-gray-700 leading-relaxed select-text flex-1">{task.replace('[ ] ', '')}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="border border-gray-200 rounded-[24px] bg-white overflow-hidden w-full max-w-lg mt-2 shadow-sm flex flex-col">
-      <div className="flex items-center gap-3 p-4 border-b border-gray-100">
-        <div className={clsx("w-12 h-12 rounded-[14px] flex items-center justify-center bg-orange-50 border border-orange-100 shrink-0", att.color)}>
-          <att.icon className="w-6 h-6" />
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <div className="text-[15px] font-medium text-gray-800 truncate mb-1">{att.title}</div>
-          <div className="text-[13px] text-gray-500 flex items-center gap-2">
-            <span>{att.size}</span>
-          </div>
-        </div>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[#1a73e8] bg-[#e8f0fe] hover:bg-blue-100 rounded-full transition-colors cursor-pointer shadow-sm">
-          <Download className="w-4 h-4" /> 下载 PPT
-        </button>
-      </div>
-
-      <div className="bg-[#f8fafd] p-5">
-        <div className="aspect-video bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col p-6 relative">
-          <div className="text-[15px] text-gray-800 font-medium whitespace-pre-wrap leading-relaxed flex-1 select-text">
-            {att.preview[currentSlide]}
-          </div>
-          
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-            <button 
-              onClick={() => setCurrentSlide(prev => Math.max(0, prev - 1))}
-              disabled={currentSlide === 0}
-              className="p-1.5 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <span className="text-sm text-gray-500 font-medium">
-              {currentSlide + 1} / {att.preview.length}
-            </span>
-            <button 
-              onClick={() => setCurrentSlide(prev => Math.min(att.preview.length - 1, prev + 1))}
-              disabled={currentSlide === att.preview.length - 1}
-              className="p-1.5 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
