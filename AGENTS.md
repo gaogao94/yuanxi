@@ -1,333 +1,91 @@
-# Multi-Agent Collaboration Rules
+# yuanxi — Agent Instructions
 
-你是这个项目里的工程协作者。多个 agent 可能同时或先后修改前端、后端、接口、配置、数据库或测试代码。
+Multi-agent business analytics system: Agent1 (clarify/plan), Agent2 (execute), Agent3 (retrospective). Python backend + React frontend. Targets oral/children's dental clinic operations.
 
-核心原则：
+## Quick Start
 
-1. 开始工作前，必须先读取项目规则和其他 agent 的变更记录。
-2. 修改前端或后端时，必须记录影响范围。
-3. 涉及接口契约的改动，必须记录给另一端。
-4. 不能只改代码不记录。
-5. 不能忽略其他 agent 已记录的修改。
+```bash
+source venv/bin/activate          # Python 3.12.7 via pyenv
+pip install -r requirements.txt
 
----
+# Run tests
+.venv/bin/python -m unittest discover -s tests
 
-## 1. 必读上下文
+# Compile-check everything
+.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py
 
-每次开始任务前，必须按顺序读取：
+# Agent1 local conversation (real Graph API + LLM)
+printf '查看仙乐斯门店的转化率\n1\n最近一个月\n' | .venv/bin/python local_agent1_test.py
 
-1. 根目录 `AGENTS.md`
-2. 更靠近当前工作目录的 `AGENTS.md` 或 `AGENTS.override.md`
-3. `.agents/CHANGELOG.md`
-4. `.agents/ACTIVE_WORK.md`
-5. 与当前任务相关的源码、测试、接口定义、配置文件
+# Integration entrypoint (mock Agent2)
+.venv/bin/python integration.py "请分析2026年4月上海门店SH001初诊转化率"
 
-如果 `.agents/CHANGELOG.md` 或 `.agents/ACTIVE_WORK.md` 不存在，需要创建。
-
-不得在未读取其他 agent 记录的情况下直接修改代码。
-
----
-
-## 2. Agent 记录目录
-
-项目根目录使用以下目录保存协作记录：
-
-```text
-.agents/
-  CHANGELOG.md
-  ACTIVE_WORK.md
+# Frontend dev server
+cd app/web && npm install && npm run dev   # http://localhost:5175/
 ```
 
-### `.agents/ACTIVE_WORK.md`
-
-记录当前正在进行或刚完成但尚未合并确认的工作。
-
-用途：
-
-- 避免多个 agent 同时修改同一批文件而互相覆盖
-- 让前端 agent 知道后端接口是否变了
-- 让后端 agent 知道前端依赖了哪些字段或行为
-- 让后续 agent 能快速理解当前项目状态
-
-### `.agents/CHANGELOG.md`
-
-记录已经完成的变更摘要。
-
-用途：
-
-- 保留跨 agent 的历史上下文
-- 记录接口、配置、数据库、前端行为的变化
-- 帮助后续 agent 判断现有实现来源
-
----
-
-## 3. 开始任务前必须登记
-
-在修改代码前，必须先在 `.agents/ACTIVE_WORK.md` 追加一条记录。
-
-格式：
-
-```md
-## [YYYY-MM-DD HH:mm] Agent: <agent-name-or-session-id>
-
-- 状态：进行中
-- 任务：
-- 修改范围：
-- 预计涉及文件：
-- 可能影响：
-  - 前端：
-  - 后端：
-  - 接口：
-  - 数据库：
-  - 配置：
-- 需要关注的其他 agent 记录：
-```
-
-如果发现已有 agent 正在修改同一文件或同一接口契约，必须先阅读其记录。
-
-如果存在冲突，不能盲目覆盖；需要说明冲突，并选择最小安全方案继续。只有在继续推进很可能产生错误方向时，才停止并说明阻塞点。
-
----
-
-## 4. 修改后必须更新记录
-
-完成代码修改后，必须更新 `.agents/ACTIVE_WORK.md` 中对应记录。
-
-格式：
-
-```md
-## [YYYY-MM-DD HH:mm] Agent: <agent-name-or-session-id>
-
-- 状态：已完成
-- 任务：
-- 实际修改文件：
-  - `path/to/file`
-  - `path/to/file`
-- 前端影响：
-- 后端影响：
-- 接口影响：
-- 数据库影响：
-- 配置影响：
-- 验证命令：
-  - `command`
-- 验证结果：
-- 未验证项：
-- 风险或假设：
-```
-
-不得只写“已完成”。必须写清楚实际改了什么，以及另一端是否需要关注。
-
----
-
-## 5. 接口契约变更规则
-
-任何涉及前后端协作的变更，都必须明确记录为“接口契约变更”。
-
-包括但不限于：
-
-- 新增接口
-- 删除接口
-- 修改接口路径
-- 修改请求参数
-- 修改响应字段
-- 修改字段类型
-- 修改错误码
-- 修改认证方式
-- 修改分页、排序、过滤规则
-- 修改上传、下载、文件格式
-- 修改环境变量
-- 修改 WebSocket、SSE、Webhook 行为
-
-记录格式：
-
-```md
-### 接口契约变更
-
-- 接口：
-- 方法：
-- 请求变化：
-- 响应变化：
-- 错误处理变化：
-- 兼容性：
-  - 是否向后兼容：
-  - 不兼容原因：
-- 前端需要调整：
-- 后端需要调整：
-- 验证方式：
-```
-
-如果接口没有变化，也要明确写：
-
-```md
-- 接口影响：无
-```
-
----
-
-## 6. 前端修改记录要求
-
-前端 agent 修改后，必须记录：
-
-- 页面或组件变化
-- 状态管理变化
-- API 调用变化
-- 依赖的后端字段
-- 错误处理变化
-- loading / empty / error 状态变化
-- 路由变化
-- 环境变量变化
-
-格式：
-
-```md
-### 前端变更
-
-- 页面/组件：
-- 用户行为变化：
-- API 依赖：
-- 新增或修改字段：
-- 错误处理：
-- 验证方式：
-```
-
----
-
-## 7. 后端修改记录要求
-
-后端 agent 修改后，必须记录：
-
-- 接口变化
-- service / handler / controller 变化
-- 数据模型变化
-- 数据库 schema 或迁移变化
-- 认证授权变化
-- 配置或环境变量变化
-- 错误码变化
-- 日志或监控变化
-
-格式：
-
-```md
-### 后端变更
-
-- 模块：
-- 接口：
-- 数据模型：
-- 数据库：
-- 认证/权限：
-- 配置：
-- 错误处理：
-- 验证方式：
-```
-
----
-
-## 8. 完成后同步到 CHANGELOG
-
-任务完成并验证后，必须把摘要追加到 `.agents/CHANGELOG.md`。
-
-格式：
-
-```md
-## [YYYY-MM-DD HH:mm] <task-title>
-
-- Agent：
-- 状态：完成
-- 修改文件：
-  - `path/to/file`
-- 变更摘要：
-- 前端影响：
-- 后端影响：
-- 接口影响：
-- 数据库影响：
-- 配置影响：
-- 验证：
-  - `command`：通过/失败
-- 遗留问题：
-```
-
----
-
-## 9. 后续 agent 的责任
-
-任何后续 agent 开始工作时，必须：
-
-1. 读取 `.agents/ACTIVE_WORK.md`
-2. 读取 `.agents/CHANGELOG.md`
-3. 判断是否有与当前任务相关的前端、后端或接口变更
-4. 将相关记录纳入实现判断
-5. 避免覆盖其他 agent 的修改
-6. 如果必须修改同一文件，先理解已有改动原因
-
-不得假设当前代码就是完整上下文。
-
-`.agents/ACTIVE_WORK.md` 和 `.agents/CHANGELOG.md` 是跨 agent 协作上下文的一部分。
-
----
-
-## 10. 禁止行为
-
-禁止：
-
-- 未读取 agent 记录就开始修改
-- 修改接口但不记录契约变化
-- 修改前端 API 调用但不记录依赖字段
-- 修改后端响应字段但不通知前端影响
-- 只写代码不写记录
-- 覆盖其他 agent 的修改
-- 删除其他 agent 的记录
-- 伪造测试结果
-- 未验证却声称验证通过
-
----
-
-## 11. 最终汇报要求
-
-每次任务完成后，最终汇报必须包含：
-
-```md
-## 完成结果
-
-- 完成了什么：
-- 修改了哪些文件：
-- 为什么这样做：
-
-## 验证结果
-
-- 已执行：
-- 结果：
-- 未验证：
-- 原因：
-
-## 影响范围
-
-- 前端：
-- 后端：
-- 接口：
-- 数据库：
-- 配置：
-
-## 权衡与假设
-
-- 权衡：
-- 假设：
-- 风险：
-
-## 遗留问题
-
-- 无 / 具体列出
-```
-
-没有执行验证时，必须明确说明没有验证，不能写“通过”。
-
----
-
-## 12. 一句话原则
-
-先读记录，再改代码。
-
-改了代码，就写记录。
-
-改了接口，就通知前后端。
-
-完成任务，要能被下一个 agent 接着做。
+## Architecture
+
+- `agents/agent1.py` — Requirement clarification, graph scoping, task planning, and review. Contains both deterministic core (`Agent1`) and LLM wrapper (`Agent1LLMClarifier`). No `task_contract.todos`; outputs `required_capabilities` for Agent2 to self-plan.
+- `agents/agent2.py` — Data execution via CrewAI: graph query, SQL fetch/debug, analysis, visualization, HTML report. Uses DeepSeek via OpenAI-compatible API.
+- `agents/agent3.py` — Post-hoc review: problem collection, step evaluation, graph gap detection, knowledge store. Runs as sidecar, does not block main workflow.
+- `integration.py` — Deterministic workflow orchestrator: Agent1 -> Agent2 -> Agent1 review. The `__main__` block runs with a simulated Agent2.
+- `local_agent1_test.py` — Interactive PyCharm/CLI test: real Graph API + real LLM multi-turn clarification until `task_contract` is generated.
+- `tools/` — Shared tool modules. `nebula_graph_query.py` is the single graph tool used by both Agent1 and Agent2.
+- `app/web/` — React + Vite + Tailwind + MUI frontend. Entry: `src/main.tsx`.
+
+## Key Conventions
+
+- **No fixed execution steps**: `task_contract` has no `todos` field. Agent1 outputs `required_capabilities`; Agent2 decides execution order via `agent2_planning_policy.execution_steps = "agent2_decides"`.
+- **Single graph tool**: Both agents use `tools/nebula_graph_query.py` (`NebulaGraphQueryTool`). Agent1 calls with `output_format="json"` for structured data; Agent2 gets text summaries by default.
+- **Strict graph mode**: Production uses `GRAPH_API_STRICT=1` — no local JSON/mock fallback on API failure. Agent1 returns `blocked` instead.
+- **Time ranges normalized**: Relative phrases ("最近一个月") are converted to concrete date intervals (`2026-04-20 to 2026-05-20`) before entering `task_contract`.
+- **Chinese human-readable fields**: Task contract human text is in Chinese; machine identifiers (`id`, `type`, `executor`) stay English.
+- **Clinic scope extraction**: Agent1 extracts named clinics from the original question (e.g. "仙乐斯门店" → `["仙乐斯门店"]`) and strips possessive particles ("仙乐斯的" → `["仙乐斯"]`). Does not re-ask for clinics already named.
+- **Privacy hardening**: Phone/email regex scrubbing, excluded entities (`RawPatientIdentity`, `PaymentCredential`), read-only DB constraint in safety_constraints.
+
+## Environment Variables
+
+Configure via `.env` (git-ignored, see `.env.example`).
+
+**Important**: `.env.example` uses `GRAPH_API_URL` but the code reads `GRAPH_API_BASE_URL`. Keep both in sync; the code default is `https://graph.automed.cn`.
+
+| Variable | Purpose |
+|---|---|
+| `OPENAI_API_KEY` | LLM API key (DeepSeek/Qwen compatible) |
+| `OPENAI_API_BASE` | LLM base URL |
+| `OPENAI_MODEL_NAME` | Model name (default `deepseek-chat`) |
+| `OPENAI_USER_AGENT` | Optional User-Agent header |
+| `OPENAI_RESPONSE_FORMAT_JSON` | Set `0` for Qwen/thinking models |
+| `GRAPH_API_KEY` | NebulaGraph HTTP API key |
+| `GRAPH_API_STRICT` | Set `1` to disable mock/local fallback |
+| `GRAPH_API_AUTO_SPACE` | Set `1` to auto-select graph space |
+| `GRAPH_API_SPACE` | Fixed graph space (overrides auto) |
+| `GRAPH_API_BASE_URL` | Graph API endpoint (default `https://graph.automed.cn`) |
+| `AGENT1_TODAY` | Override "today" date for testing |
+| `DB_*` | MySQL connection for data fetch |
+
+## Testing
+
+- Framework: `unittest`
+- All tests in `tests/test_agent1_workflow.py`
+- Run single test: `.venv/bin/python -m unittest tests.test_agent1_workflow.Agent1WorkflowTest.<test_method>`
+- Run all: `.venv/bin/python -m unittest discover -s tests`
+- Always verify with: `.venv/bin/python -m compileall agents integration.py tests tools local_agent1_test.py`
+
+## Multi-Agent Collaboration Protocol
+
+Before modifying code, read `.agents/ACTIVE_WORK.md` and `.agents/CHANGELOG.md`. After changes, update both files with:
+- Status, task, files modified
+- Frontend/backend/interface/database/config impact
+- Verification commands and results
+
+When changing interfaces between agents, record the contract change explicitly. See existing CHANGELOG entries for format.
+
+## Frontend Notes
+
+- `app/web/` uses Vite with a custom `figma:asset/` resolver
+- `@` alias maps to `src/`
+- Both React and Tailwind plugins must remain in vite config
+- `assetsInclude`: `.svg`, `.csv` only — never add `.css`, `.tsx`, `.ts`
+- npm install may timeout; use `--fetch-timeout=600000 --fetch-retries=5`

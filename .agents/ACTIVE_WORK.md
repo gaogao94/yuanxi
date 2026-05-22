@@ -596,3 +596,22 @@
 - 风险或假设：
   - 当前网络访问 npm 源较慢，首次安装需要较长时间并已通过延长超时完成
   - `node_modules` 为本地依赖目录，通常不纳入版本管理
+
+## [2026-05-22 10:00] Agent: trae
+
+- 状态：已完成
+- 任务：将依赖文件添加到 .gitignore
+- 实际修改文件：
+  - `.gitignore`
+  - `.agents/ACTIVE_WORK.md`
+  - `.agents/CHANGELOG.md`
+- 前端影响：无
+- 后端影响：无
+- 接口影响：无
+- 数据库影响：无
+- 配置影响：.gitignore 新增 Node.js 依赖目录（node_modules/）、前端构建产物（dist/、build/、.vite/）、Python 包元数据（*.egg-info/、*.egg）、npm 日志（npm-debug.log*）
+- 验证命令：
+  - `git status --short`
+- 验证结果：已确认 node_modules 被正确忽略
+- 未验证项：无
+- 风险或假设：无
