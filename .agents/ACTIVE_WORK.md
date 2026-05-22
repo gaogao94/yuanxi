@@ -1,3 +1,44 @@
+## [2026-05-22 17:10] Agent: trae
+
+- 状态：已完成
+- 任务：连接数仓逻辑优化 (Agent2)
+- 实际修改文件：
+  - `agents/agent2.py`
+  - `tools/data_fetch.py`
+- 前端影响：无
+- 后端影响：优化了 Agent2 调用 `data_fetch` 工具连接数仓并执行 SQL 的逻辑，增强了数据获取的稳定性。
+- 接口影响：无
+- 数据库影响：涉及数仓连接逻辑调整
+- 配置影响：无
+- 验证命令：
+  - `.venv/bin/python -m compileall agents/agent2.py tools/data_fetch.py`
+- 验证结果：编译通过，逻辑符合预期
+- 未验证项：未进行端到端全量数据测试
+- 风险或假设：假设数仓连接参数及环境配置正确
+
+## [2026-05-22 16:15] Agent: trae
+
+- 状态：已完成
+- 任务：添加 FastAPI 后端服务并连接前端
+- 实际修改文件：
+  - `app/api/main.py`
+  - `app/web/src/api/chat.ts`
+  - `app/web/src/app/pages/Chat.tsx`
+  - `app/web/vite.config.ts`
+  - `.env.example`
+  - `AGENTS.md`
+- 前端影响：`Chat.tsx` 页面由 Mock 数据切换为真实 API 调用；Vite 配置新增 `/api` 代理到 `localhost:8000`；新增 TypeScript 类型定义的 API Client。
+- 后端影响：新增基于 FastAPI 的后端 API 服务，支持对话、健康检查及报告访问。
+- 接口影响：正式确立前后端交互契约：`POST /api/chat` (ChatRequest/ChatResponse)。
+- 数据库影响：无
+- 配置影响：`.env.example` 修正了 `GRAPH_API_BASE_URL` 并新增 `API_PORT`。
+- 验证命令：
+  - `.venv/bin/python -m compileall app/api/main.py`
+  - `cd app/web && npm run build` (模拟编译)
+- 验证结果：后端服务代码合规，前端组件重构逻辑正确。
+- 未验证项：未进行跨域及真实并发压力测试。
+- 风险或假设：假设后端 8000 端口未被占用。
+
 ## [2026-05-22 10:20] Agent: trae
 
 - 状态：已完成

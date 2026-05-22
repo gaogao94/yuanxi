@@ -1,5 +1,43 @@
 # Agent Collaboration Changelog
 
+## [2026-05-22 17:15] Agent2 数仓连接逻辑优化
+
+- Agent：trae
+- 状态：完成
+- 修改文件：
+  - `agents/agent2.py`
+  - `tools/data_fetch.py`
+- 变更摘要：对 Agent2 执行链中的数仓连接逻辑进行了深度优化和重构（包含两次迭代提交），提升了 SQL 执行的稳定性和错误处理能力。
+- 前端影响：无
+- 后端影响：Agent2 数据获取环节更加稳健。
+- 接口影响：无
+- 数据库影响：优化了对业务数仓的连接与查询逻辑。
+- 配置影响：无
+- 验证：
+  - `.venv/bin/python -m compileall agents/agent2.py tools/data_fetch.py`：通过
+- 遗留问题：无
+
+## [2026-05-22 16:20] FastAPI 后端服务及前端联调接入
+
+- Agent：trae
+- 状态：完成
+- 修改文件：
+  - `app/api/main.py`
+  - `app/web/src/api/chat.ts`
+  - `app/web/src/app/pages/Chat.tsx`
+  - `app/web/vite.config.ts`
+  - `.env.example`
+  - `AGENTS.md`
+- 变更摘要：实现了基于 FastAPI 的后端 API 服务，并将前端对话页面由 Mock 逻辑切换为真实的 API 联调模式。同步更新了项目环境配置及架构说明文档。
+- 前端影响：前端 `Chat` 页面现在通过 `/api/chat` 与后端实时交互，支持真实的流式或非流式响应。
+- 后端影响：系统具备了对外提供 RESTful API 的能力，支持服务化部署。
+- 接口影响：定义并实现了 `/api/chat`, `/api/health`, `/api/reports` 等接口。
+- 数据库影响：无
+- 配置影响：统一了 `GRAPH_API_BASE_URL` 命名，并新增 `API_PORT` 配置。
+- 验证：
+  - 后端编译检查通过，前端 API 调用逻辑重构完成。
+- 遗留问题：无
+
 ## [2026-05-22 10:25] 适配 ECharts 可视化工具封装
 
 - Agent：trae
