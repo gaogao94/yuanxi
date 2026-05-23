@@ -29,9 +29,27 @@ class Agent3AndStorageTest(unittest.TestCase):
             ProblemStore.init(os.path.join(temp_dir, "problem_reports.json"))
             ReviewCandidateStore.init(os.path.join(temp_dir, "review_candidates.json"))
             KnowledgeCandidateStore.init(os.path.join(temp_dir, "knowledge_candidates.json"))
-            agent1_output = agent.prepare_task(
-                "请分析2026年4月上海门店SH001和SH002初诊转化率，并输出Markdown报告"
-            )
+            agent1_output = {
+            "task_contract": {
+                "input_context": {
+                    "metric": "first_visit_conversion_rate",
+                    "metric_label": "初诊转化率",
+                    "time_range": "2026-04-01 to 2026-04-30",
+                    "clinic_scope": ["上海徐汇店"],
+                    "analysis_intent": "metric_analysis",
+                    "problem_statement": "",
+                    "problem_signal": {},
+                },
+                "required_capabilities": [
+                        {"name": "nebula_graph_query", "required": True},
+                        {"name": "data_fetch", "required": True},
+                        {"name": "sql_check", "required": True},
+                        {"name": "metric_analysis", "required": True},
+                        {"name": "report_generation", "required": True},
+                    ],
+                    "expected_deliverable": {"format": "Markdown"},
+                }
+            }
             agent2_result = {
                 "completed_capabilities": [
                     capability["name"]
@@ -137,24 +155,27 @@ class Agent3AndStorageTest(unittest.TestCase):
                     for capability in task_contract["required_capabilities"]
                     if capability["required"]
                 ],
-                "data_fetch_result": {
-                    "status": "success",
-                    "scope": {"clinic_scope": task_contract["input_context"]["clinic_scope"]},
-                },
+                "data_fetch_result": {"status": "success", "scope": {"clinic_scope": ["上海徐汇店"]}},
                 "sql_check_result": {"status": "success"},
                 "knowledge_graph_result": {"status": "success"},
                 "analysis_result": {
                     "status": "success",
-                    "metric_summary": {"metric": task_contract["input_context"]["metric"]},
+                    "metric_summary": {"metric": "first_visit_conversion_rate"},
                 },
                 "visualization_result": {"status": "success"},
-                "final_report": "本次初诊转化率分析已完成，未包含患者敏感信息。",
+                "final_report": "主流程正常完成。",
             }
 
         with patch("integration.run_agent3_review", side_effect=RuntimeError("agent3 boom")):
             result = run_workflow(
-                "请分析2026年4月上海门店SH001和SH002初诊转化率，并输出Markdown报告",
+                "请分析上海徐汇店初诊转化率，并输出Markdown报告",
                 agent2_runner=agent2_runner,
+                graph_data={},
+                user_context={
+                    "metric": "first_visit_conversion_rate",
+                    "time_range": "2026-04-01 to 2026-04-30",
+                    "clinic_scope": ["上海徐汇店"],
+                },
             )
 
         self.assertEqual(result["status"], "completed")
@@ -228,8 +249,14 @@ class Agent3AndStorageTest(unittest.TestCase):
             }
 
         result = run_workflow(
-            "请分析2026年4月上海门店SH001和SH002初诊转化率，并输出Markdown报告",
+            "请分析上海徐汇店和上海新江湾店初诊转化率，并输出Markdown报告",
             agent2_runner=agent2_runner,
+            graph_data={},
+            user_context={
+                "metric": "first_visit_conversion_rate",
+                "time_range": "2026-04-01 to 2026-04-30",
+                "clinic_scope": ["上海徐汇店", "上海新江湾店"],
+            },
         )
 
         process_log = result["process_log"]

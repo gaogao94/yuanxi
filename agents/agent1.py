@@ -254,6 +254,7 @@ class Agent1LLMClarifier:
                 "revenue": "营收",
                 "appointment_count": "预约量",
                 "cash_flow": "现金流",
+                "renewal_rate": "续卡率",
             },
         }
 
@@ -321,8 +322,18 @@ class Agent1LLMClarifier:
 @dataclass
 class Agent1:
     metric_catalog: dict[str, dict[str, Any]] = field(default_factory=dict)
+    clinic_catalog: list[dict[str, str]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        if not self.clinic_catalog:
+            try:
+                catalog_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "clinic_catalog.json")
+                if os.path.exists(catalog_path):
+                    with open(catalog_path, "r", encoding="utf-8") as f:
+                        self.clinic_catalog = json.load(f)
+            except Exception:
+                self.clinic_catalog = []
+
         if self.metric_catalog:
             return
         self.metric_catalog = {
@@ -355,6 +366,12 @@ class Agent1:
                 "label": "现金流",
                 "definition": "现金流入、现金流出和净现金流；第一版需由 Agent2 校验收款、退款、支出和入账时间口径。",
                 "must_include": ["指标口径", "现金流入", "现金流出", "净现金流", "门店维度拆解", "风险提示"],
+            },
+            "renewal_rate": {
+                "keywords": ["续卡率", "续卡", "续费率", "续费", "会员续卡"],
+                "label": "续卡率",
+                "definition": "续卡人数 / 可续卡会员人数；第一版需由 Agent2 取数后复核口径。",
+                "must_include": ["指标口径", "总体结果", "门店维度拆解", "趋势变化", "建议动作"],
             },
         }
 
@@ -504,11 +521,9 @@ class Agent1:
         time_range = self.normalize_time_range(
             context.get("time_range") or self._detect_time_range(effective_question)
         )
-        clinic_scope_from_context = "clinic_scope" in context
         clinic_scope = self._normalize_clinic_scope(
             context.get("clinic_scope") or self._detect_clinic_scope(effective_question)
         )
-        address_scope = self._detect_address_scope(effective_question)
         output_format = context.get("output_format") or self._detect_output_format(effective_question)
         population = context.get("population") or self._detect_population(effective_question)
         analysis_context = context.get("analysis_context") or self._detect_analysis_context(
@@ -537,7 +552,8 @@ class Agent1:
             if graph_metric_options:
                 issue = "图谱中匹配到相关业务关系，但用户没有明确要分析的具体口径。"
                 metric_options = graph_metric_options
-                metric_question = "图谱中匹配到业务关系，本次要按哪个口径继续分析？"
+                formatted_options = "、".join(graph_metric_options)
+                metric_question = f"图谱中匹配到业务关系，本次要按哪个口径继续分析？可选：{formatted_options}"
                 metric_type = "single_select"
                 metric_source = "nebula_graph_query"
                 ambiguity_options = graph_metric_options
@@ -581,17 +597,10 @@ class Agent1:
                 }
             )
 
-        needs_clinic_clarification = not clinic_scope or (
-            address_scope and not clinic_scope_from_context and self._is_unresolved_location_scope(clinic_scope)
-        )
+        needs_clinic_clarification = not clinic_scope
         if needs_clinic_clarification:
             clinic_issue = "用户没有明确门店或组织范围。"
-            clinic_question = "请补充本次分析覆盖的门店名称、门店 ID、地址或组织范围。"
-            if address_scope:
-                clinic_issue = "用户提供了地址或区域，但还需要确认它对应哪些门店或组织范围。"
-                clinic_question = (
-                    f"你提到的地址或区域是“{address_scope}”，请确认要分析的门店名称、门店 ID 或组织范围。"
-                )
+            clinic_question = "请补充本次分析覆盖的门店名称或简称。"
             ambiguities.append(
                 {
                     "field": "clinic_scope",
@@ -1488,63 +1497,43 @@ class Agent1:
         return f"{start.isoformat()} to {end.isoformat()}"
 
     def _detect_clinic_scope(self, question: str) -> list[str]:
-        clinic_ids = sorted(
-            set(re.findall(r"(?<![A-Z0-9])([A-Z]{2}\d{3})(?![A-Z0-9])", question))
-        )
-        if clinic_ids:
-            return clinic_ids
-        if "上海门店" in question or "上海" in question:
-            return ["Shanghai clinics"]
-        named_clinic = self._detect_named_clinic_scope(question)
-        if named_clinic:
-            return [named_clinic]
-        address_scope = self._detect_address_scope(question)
-        if address_scope:
-            return [address_scope]
+        matched_clinics = []
+        for clinic in self.clinic_catalog:
+            short_name = clinic.get("shortName")
+            full_name = clinic.get("fullName")
+            
+            names_to_check = set()
+            if short_name:
+                names_to_check.add(short_name)
+                # Extract core names to support partial matching like "仙乐斯" for "上海仙乐斯店"
+                core1 = re.sub(r"^(上海|天津|南京|苏州|常州|嘉善|昆山市?|高新区|工业园区)?(极橙)?", "", short_name)
+                core1 = re.sub(r"(店|门诊部?|诊所|旗舰店|口腔|有限公司)$", "", core1)
+                if len(core1) >= 2:
+                    names_to_check.add(core1)
+                
+                core2 = re.sub(r"(店|门诊部?|诊所|旗舰店|口腔|有限公司)$", "", short_name)
+                if len(core2) >= 2:
+                    names_to_check.add(core2)
+
+            if full_name:
+                names_to_check.add(full_name)
+                core_full = re.sub(r"(店|门诊部?|诊所|旗舰店|口腔|有限公司)$", "", full_name)
+                if len(core_full) >= 2:
+                    names_to_check.add(core_full)
+
+            # Check if any of the generated names are in the question
+            # Or if the question is exactly one of the generated names
+            for name in names_to_check:
+                if name in question or question == name:
+                    matched_clinics.append(short_name or full_name)
+                    break
+        
+        if matched_clinics:
+            return sorted(set(matched_clinics))
+
         return []
 
-    def _detect_named_clinic_scope(self, question: str) -> str:
-        for marker in ("门店", "诊所", "院区", "店"):
-            marker_index = question.find(marker)
-            if marker_index < 0:
-                continue
-            start = max(0, marker_index - 12)
-            name = question[start : marker_index + len(marker)]
-            name = self._clean_clinic_scope_name(name)
-            if self._is_invalid_named_clinic(name):
-                continue
-            if name in {"上海门店", "上海"}:
-                return ""
-            if len(name) >= 3:
-                return name
-        possessive_name = self._detect_possessive_clinic_scope(question)
-        if possessive_name:
-            return possessive_name
-        return ""
 
-    def _detect_possessive_clinic_scope(self, question: str) -> str:
-        metric_terms = [
-            "初诊转化率",
-            "转化率",
-            "复诊率",
-            "营收",
-            "收入",
-            "预约量",
-            "现金流",
-            "续卡",
-        ]
-        pattern = (
-            r"([\u4e00-\u9fffA-Za-z0-9]{2,24})的(?:"
-            + "|".join(re.escape(term) for term in metric_terms)
-            + r")"
-        )
-        for match in re.finditer(pattern, question):
-            name = self._clean_clinic_scope_name(match.group(1))
-            if self._is_invalid_named_clinic(name):
-                continue
-            if len(name) >= 2:
-                return name
-        return ""
 
     def _normalize_clinic_scope(self, value: Any) -> list[str]:
         if value in (None, "", []):
@@ -1556,12 +1545,20 @@ class Agent1:
                 name = self._clean_clinic_scope_name(item)
                 if not name:
                     continue
-                if "上海" in name:
-                    name = "Shanghai clinics"
-                elif "全部" in name or "所有" in name:
+                if "全部" in name or "所有" in name:
                     name = "all_authorized_clinics"
-                if name not in normalized_items:
-                    normalized_items.append(name)
+                    if name not in normalized_items:
+                        normalized_items.append(name)
+                    continue
+
+                detected = self._detect_clinic_scope(name)
+                if detected:
+                    for d in detected:
+                        if d not in normalized_items:
+                            normalized_items.append(d)
+                else:
+                    if name not in normalized_items:
+                        normalized_items.append(name)
         return normalized_items
 
     def _clean_clinic_scope_name(self, value: str) -> str:
@@ -1591,38 +1588,9 @@ class Agent1:
             return True
         return False
 
-    def _detect_address_scope(self, question: str) -> str:
-        match = re.search(
-            r"([\u4e00-\u9fffA-Za-z0-9]{2,}(?:省|市|区|县|镇|乡|街道|路|街|门店|诊所|院区)"
-            r"(?:[\u4e00-\u9fffA-Za-z0-9]*(?:省|市|区|县|镇|乡|街道|路|街|门店|诊所|院区))*)",
-            question,
-        )
-        if not match:
-            return ""
 
-        address = match.group(1)
-        for suffix in ("最近", "近", "本月", "上月", "今年", "去年"):
-            if suffix in address:
-                address = address.split(suffix, 1)[0]
-        address = address.strip("，,。；;：: 的")
-        location_markers = ("省", "市", "区", "县", "镇", "乡", "街道", "路", "街", "诊所", "院区")
-        if "门店" in address and not any(marker in address for marker in location_markers):
-            return ""
-        if address in {"帮我看看", "看一下", "看看", "查询", "分析"}:
-            return ""
-        return address
 
-    def _is_unresolved_location_scope(self, clinic_scope: list[str]) -> bool:
-        if not clinic_scope:
-            return False
-        for item in clinic_scope:
-            scope = str(item)
-            if re.fullmatch(r"[A-Z]{2}\d{3}", scope):
-                continue
-            if scope in {"Shanghai clinics", "all_authorized_clinics"}:
-                continue
-            return True
-        return False
+
 
     def _detect_output_format(self, question: str) -> str:
         upper_question = question.upper()

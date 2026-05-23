@@ -6,11 +6,12 @@ import type { ArtifactChatMessage } from "../../types/chat";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 
-const iconMap = {
+const iconMap: Record<string, React.ElementType> = {
   ppt: Presentation,
   todo: ListChecks,
   report: FileText,
   file: FileText,
+  html_report: FileText,
 };
 
 type ArtifactMessageCardProps = {
@@ -44,7 +45,7 @@ export function ArtifactMessageCard({ message, onOpenArtifact }: ArtifactMessage
                 </Button>
                 <Button type="button" className="flex-1 rounded-xl bg-[#1a73e8] hover:bg-blue-700" asChild={Boolean(artifact.url)}>
                   {artifact.url ? (
-                    <a href={artifact.url} target="_blank" rel="noreferrer">
+                    <a href={`${artifact.url}?download=true`} download target="_blank" rel="noreferrer">
                       <Download className="h-4 w-4" />
                       下载
                     </a>

@@ -2,13 +2,7 @@ import { Search, Filter, FileText, Presentation, CheckSquare, Download } from "l
 import { clsx } from "clsx";
 
 export function History() {
-  const items = [
-    { id: 1, type: 'ppt', title: '瑞尔齿科（朝阳店）续卡率提升方案', date: '今天 14:30', size: '3.2 MB', icon: Presentation, color: 'text-orange-600', bg: 'bg-orange-50' },
-    { id: 2, type: 'todo', title: '前台跟进及回访标准待办 (SOP)', date: '今天 14:30', size: '8 项待办', icon: CheckSquare, color: 'text-green-600', bg: 'bg-green-50' },
-    { id: 3, type: 'pdf', title: '第三季度流失患者访谈记录分析', date: '昨天 09:15', size: '1.5 MB', icon: FileText, color: 'text-red-600', bg: 'bg-red-50' },
-    { id: 4, type: 'ppt', title: '李大夫-患者转化分析与建议', date: '2023-11-10', size: '2.1 MB', icon: Presentation, color: 'text-orange-600', bg: 'bg-orange-50' },
-    { id: 5, type: 'todo', title: '拜博口腔核心店周度跟进任务', date: '2023-11-09', size: '12 项待办', icon: CheckSquare, color: 'text-green-600', bg: 'bg-green-50' },
-  ];
+  const items: any[] = [];
 
   return (
     <div className="flex-1 flex flex-col h-full bg-white relative">

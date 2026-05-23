@@ -74,39 +74,14 @@ const DEFAULT_PROMPTS: PromptItem[] = [
   },
 ];
 
-const RECENT_HISTORY: ApiArtifact[] = [
-  {
-    id: "history-ppt-1",
-    type: "ppt",
-    title: "极橙大宁店-流失患者分析报告.pptx",
-    createdAt: "今天 10:30",
-    size: "2.4 MB",
-    preview: [
-      "幻灯片 1：本季度流失率概览\n- 大宁店流失率：12%\n- 显著改善：复诊等待时间减少",
-      "幻灯片 2：重点改进建议\n- 继续加强正畸复诊提醒\n- 完善初诊未成交患者的7天追踪SOP",
-    ],
-  },
-  {
-    id: "history-todo-1",
-    type: "todo",
-    title: "极橙徐汇店-前台回访规范（SOP）",
-    createdAt: "昨天 16:45",
-    size: "5 项待办",
-    preview: [
-      "[ ] 确认每日预约名单并发送提醒",
-      "[ ] 发送复诊提醒微信（正畸及种植患者）",
-      "[ ] 电话回访逾期未归患者，记录未归原因",
-      "[ ] 整理患者反馈记录并录入 HIS 系统",
-      "[ ] 每日晨会播报前日客诉及处理进度",
-    ],
-  },
-];
+const RECENT_HISTORY: ApiArtifact[] = [];
 
 const artifactIconMap = {
   ppt: Presentation,
   todo: CheckSquare,
   report: Presentation,
   file: Presentation,
+  html_report: Presentation,
 };
 
 type TimelineItem =
@@ -198,7 +173,7 @@ export function Chat() {
   };
 
   const handleOpenArtifact = (artifact: ApiArtifact) => {
-    if (artifact.preview?.length) {
+    if (artifact.preview?.length || artifact.url) {
       setPreviewArtifact(artifact);
     }
   };
@@ -301,15 +276,27 @@ export function Chat() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    className="flex cursor-pointer items-center gap-1.5 rounded-full bg-[#e8f0fe] px-4 py-2 text-sm font-medium text-[#1a73e8] transition-colors hover:bg-blue-100"
-                  >
-                    <Download className="h-4 w-4" /> 下载
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewArtifact(null)}
+                    {previewArtifact.url ? (
+                      <a
+                        href={`${previewArtifact.url}?download=true`}
+                        target="_blank"
+                        rel="noreferrer"
+                        download
+                        className="flex cursor-pointer items-center gap-1.5 rounded-full bg-[#e8f0fe] px-4 py-2 text-sm font-medium text-[#1a73e8] transition-colors hover:bg-blue-100"
+                      >
+                        <Download className="h-4 w-4" /> 下载
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        className="flex cursor-pointer items-center gap-1.5 rounded-full bg-[#e8f0fe] px-4 py-2 text-sm font-medium text-[#1a73e8] transition-colors hover:bg-blue-100"
+                      >
+                        <Download className="h-4 w-4" /> 下载
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setPreviewArtifact(null)}
                     className="cursor-pointer rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
                   >
                     <X className="h-5 w-5" />
@@ -318,46 +305,13 @@ export function Chat() {
               </div>
 
               <div className="flex-1 space-y-6 overflow-y-auto bg-[#f8fafd] p-6">
-                {(previewArtifact.preview ?? []).map((slideText, index) => {
-                  const lines = slideText.split("\n");
-                  const title = lines[0];
-                  const content = lines.slice(1);
-
-                  return (
-                    <div
-                      key={`${previewArtifact.id}-${index}`}
-                      className="group relative flex aspect-[16/9] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
-                    >
-                      <div className="pointer-events-none absolute inset-0 z-10 border-4 border-transparent transition-colors group-hover:border-blue-500/20" />
-                      <div className="h-1.5 w-full shrink-0 bg-gradient-to-r from-orange-400 to-orange-500" />
-                      <div className="flex h-full flex-col p-8">
-                        <h2 className="mb-6 border-b border-gray-100 pb-4 text-[22px] font-bold leading-tight text-gray-800">
-                          {title}
-                        </h2>
-                        <div className="flex-1 space-y-4">
-                          {content.length > 0 ? (
-                            content.map((line, lineIndex) => {
-                              const cleanLine = line.replace(/^- /, "");
-                              if (!cleanLine.trim()) return null;
-
-                              return (
-                                <div key={lineIndex} className="flex items-start gap-3">
-                                  <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500" />
-                                  <p className="text-[16px] leading-relaxed text-gray-600">{cleanLine}</p>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <p className="text-[16px] leading-relaxed text-gray-600">暂无更多预览内容。</p>
-                          )}
-                        </div>
-                        <div className="mt-auto flex items-end justify-between pt-4">
-                          <span className="text-sm font-medium text-gray-300">{index + 1}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                {previewArtifact.type === "html_report" && previewArtifact.url ? (
+                  <iframe src={previewArtifact.url} className="w-full h-full border-none rounded-xl bg-white shadow-sm" title={previewArtifact.title} />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-gray-500">
+                    暂无预览内容
+                  </div>
+                )}
               </div>
             </motion.div>
           </>
@@ -424,12 +378,24 @@ export function Chat() {
                       >
                         <Eye className="h-3.5 w-3.5" /> 预览
                       </button>
-                      <button
-                        type="button"
-                        className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#e8f0fe] py-2 text-[12px] font-medium text-[#1a73e8] transition-colors hover:bg-blue-100"
-                      >
-                        <Download className="h-3.5 w-3.5" /> 下载
-                      </button>
+                      {item.artifact.url ? (
+                        <a
+                          href={`${item.artifact.url}?download=true`}
+                          target="_blank"
+                          rel="noreferrer"
+                          download
+                          className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#e8f0fe] py-2 text-[12px] font-medium text-[#1a73e8] transition-colors hover:bg-blue-100"
+                        >
+                          <Download className="h-3.5 w-3.5" /> 下载
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#e8f0fe] py-2 text-[12px] font-medium text-[#1a73e8] transition-colors hover:bg-blue-100"
+                        >
+                          <Download className="h-3.5 w-3.5" /> 下载
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

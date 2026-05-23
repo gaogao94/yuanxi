@@ -19,6 +19,7 @@ from agents.agent3 import run_agent3_review
 
 
 Agent2Runner = Callable[[dict[str, Any]], dict[str, Any]]
+EventCallback = Callable[[str, str, str], None]
 
 
 def run_workflow(
@@ -26,6 +27,8 @@ def run_workflow(
     agent2_runner: Agent2Runner | None = None,
     agent1: Agent1 | None = None,
     graph_data: dict[str, Any] | str | None = None,
+    event_callback: EventCallback | None = None,
+    user_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     coordinator_agent1 = agent1 or Agent1()
     process_log = _new_process_log()
@@ -37,9 +40,20 @@ def run_workflow(
         status="completed",
         message="Workflow received user question.",
     )
+    if event_callback:
+        event_callback("thinking", "Workflow", "正在接收您的问题...")
 
-    user_context = {"graph_data": graph_data} if graph_data is not None else None
-    agent1_output = coordinator_agent1.prepare_task(user_question, user_context)
+    if user_context is not None:
+        effective_context = dict(user_context)
+        if graph_data is not None:
+            effective_context["graph_data"] = graph_data
+    elif graph_data is not None:
+        effective_context = {"graph_data": graph_data}
+    else:
+        effective_context = None
+    if event_callback:
+        event_callback("thinking", "Agent1", "正在查询知识图谱并澄清需求...")
+    agent1_output = coordinator_agent1.prepare_task(user_question, effective_context)
     _log_event(
         process_log,
         agent="Agent1",
@@ -61,7 +75,9 @@ def run_workflow(
         }
 
     task_contract = agent1_output["task_contract"]
-    runner = agent2_runner or _simulate_agent2_result
+    runner = agent2_runner or _run_real_agent2
+    if event_callback:
+        event_callback("thinking", "Agent2", "正在执行数据分析与报告生成...")
     agent2_result = runner(task_contract)
     _log_event(
         process_log,
@@ -72,6 +88,8 @@ def run_workflow(
         artifact_ref="agent2_result",
     )
 
+    if event_callback:
+        event_callback("thinking", "Agent1", "正在审核 Agent2 的分析结果...")
     review = coordinator_agent1.review_agent2_result(agent1_output, agent2_result)
     review_result = review["review_result"]
     _log_event(
@@ -105,6 +123,23 @@ def run_workflow(
     }
 
 
+def _run_real_agent2(task_contract: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from agents.agent2 import run_agent2
+        result = run_agent2(task_contract)
+        if result.get("final_report") and not result.get("error"):
+            return result
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        return {
+            "completed_capabilities": [],
+            "final_report": f"Agent2 真实执行失败，已降级到模拟输出。错误：{exc}",
+            "error": str(exc),
+        }
+    return _simulate_agent2_result(task_contract)
+
+
 def _simulate_agent2_result(task_contract: dict[str, Any]) -> dict[str, Any]:
     input_context = task_contract["input_context"]
     completed_capabilities = [
@@ -115,6 +150,45 @@ def _simulate_agent2_result(task_contract: dict[str, Any]) -> dict[str, Any]:
     metric = input_context["metric"]
     time_range = input_context["time_range"]
     clinic_scope = input_context["clinic_scope"]
+
+    final_report_text = (
+        f"## 问题定义\n\n"
+        f"本次分析目标是评估 {time_range}、{', '.join(clinic_scope)} 的 {metric}。\n\n"
+        f"## 核心指标结果\n\n"
+        f"- 模拟结果：45.2%。\n"
+        f"- 同比：+3.1pp。\n\n"
+        f"## 限制与风险\n\n"
+        f"- 当前为第一版模拟数据输出，正式结论需要接入真实数据库后复核。\n"
+    )
+
+    import uuid
+    import markdown
+    html_filename = f"report_{uuid.uuid4().hex[:8]}.html"
+    report_dir = Path(__file__).resolve().parent / "output" / "report"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / html_filename
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <title>模拟分析报告</title>
+        <style>
+            body{{font-family:"Microsoft YaHei",sans-serif;background:#f5f7fa;padding:40px 60px;line-height:2;}}
+            .report-box{{background:#fff;padding:50px;border-radius:12px;}}
+        </style>
+    </head>
+    <body>
+        <div class="report-box">
+            <h1>业务数据分析正式报告</h1>
+            <div>{markdown.markdown(final_report_text, extensions=['tables'])}</div>
+        </div>
+    </body>
+    </html>
+    """
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(html_content.strip())
 
     return {
         "completed_capabilities": completed_capabilities,
@@ -190,18 +264,19 @@ def _simulate_agent2_result(task_contract: dict[str, Any]) -> dict[str, Any]:
                     "data_source": "mock_data",
                     "file_path": "",
                     "key_message": "Mock chart spec generated; no real chart file in first version.",
+                    "xAxis": {"data": clinic_scope},
+                    "series": [
+                        {
+                            "name": metric,
+                            "type": "bar",
+                            "data": [45.2, 42.1, 40.5, 48.0][:len(clinic_scope)] if clinic_scope else [45.2]
+                        }
+                    ]
                 }
             ],
         },
-        "final_report": (
-            f"## 问题定义\n\n"
-            f"本次分析目标是评估 {time_range}、{', '.join(clinic_scope)} 的 {metric}。\n\n"
-            f"## 核心指标结果\n\n"
-            f"- 模拟结果：45.2%。\n"
-            f"- 同比：+3.1pp。\n\n"
-            f"## 限制与风险\n\n"
-            f"- 当前为第一版模拟数据输出，正式结论需要接入真实数据库后复核。\n"
-        ),
+        "final_report": final_report_text,
+        "html_report_path": f"report/{html_filename}",
     }
 
 

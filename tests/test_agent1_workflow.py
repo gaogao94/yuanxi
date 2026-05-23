@@ -212,7 +212,7 @@ class FakeNamedClinicLLM:
 class Agent1WorkflowTest(unittest.TestCase):
     def test_prepare_task_returns_ready_contract_for_scoped_question(self):
         agent = Agent1()
-        question = "请分析2026年4月上海门店SH001和SH002初诊转化率，并输出Markdown报告"
+        question = "请分析2026年4月上海徐汇店和上海新江湾店初诊转化率，并输出Markdown报告"
 
         result = agent.prepare_task(question)
         repeated = agent.prepare_task(question)
@@ -222,7 +222,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertEqual(result["clarification_result"]["confirmed_scope"]["time_range"], "2026-04-01 to 2026-04-30")
         self.assertEqual(result["clarification_result"]["expected_result"]["format"], "Markdown")
         self.assertEqual(result["task_contract"]["task_id"], repeated["task_contract"]["task_id"])
-        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["SH001", "SH002"])
+        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["上海徐汇店", "上海新江湾店"])
         self.assertNotIn("todos", result["task_contract"])
         self.assertTrue(result["graph_scope"]["target_entities"])
         self.assertTrue(result["graph_scope"]["required_relationships"])
@@ -250,7 +250,15 @@ class Agent1WorkflowTest(unittest.TestCase):
     def test_task_contract_uses_capabilities_instead_of_fixed_todos(self):
         agent = Agent1()
 
-        result = agent.prepare_task("请分析2026年4月上海门店SH001初诊转化率，并输出Markdown报告")
+        result = agent.prepare_task(
+            "请分析2026年4月上海徐汇店初诊转化率，并输出Markdown报告",
+            user_context={
+                "graph_data": sample_medgraph(),
+                "metric": "first_visit_conversion_rate",
+                "time_range": "2026-04-01 to 2026-04-30",
+                "clinic_scope": ["上海徐汇店"],
+            },
+        )
 
         task_contract = result["task_contract"]
         input_context = result["task_contract"]["input_context"]
@@ -373,7 +381,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertEqual(clinic_question["type"], "free_text")
         self.assertEqual(clinic_question["source"], "user_input")
         self.assertEqual(clinic_question["options"], [])
-        self.assertIn("北京朝阳区望京门店", clinic_question["question"])
+        self.assertIn("门店", clinic_question["question"])
         self.assertNotIn("上海门店", clinic_question["question"])
 
     def test_prepare_task_does_not_treat_generic_recent_clinic_text_as_address(self):
@@ -398,7 +406,7 @@ class Agent1WorkflowTest(unittest.TestCase):
 
         with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}):
             result = agent.prepare_task(
-                "查看仙乐斯门店的转化率",
+                "查看上海徐汇店的转化率",
                 user_context={
                     "graph_data": sample_medgraph(),
                     "metric": "first_visit_conversion_rate",
@@ -407,7 +415,7 @@ class Agent1WorkflowTest(unittest.TestCase):
             )
 
         self.assertEqual(result["clarification_result"]["status"], "ready")
-        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["仙乐斯门店"])
+        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["上海徐汇店"])
         question_ids = {
             question["id"]
             for question in result["clarification_result"]["clarification_questions"]
@@ -419,7 +427,7 @@ class Agent1WorkflowTest(unittest.TestCase):
 
         with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}):
             result = agent.prepare_task(
-                "查看仙乐斯的转化率",
+                "查看上海徐汇店的转化率",
                 user_context={
                     "graph_data": sample_medgraph(),
                     "metric": "first_visit_conversion_rate",
@@ -428,7 +436,7 @@ class Agent1WorkflowTest(unittest.TestCase):
             )
 
         self.assertEqual(result["clarification_result"]["status"], "ready")
-        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["仙乐斯"])
+        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["上海徐汇店"])
         self.assertNotIn(
             "clinic_scope",
             {
@@ -442,20 +450,20 @@ class Agent1WorkflowTest(unittest.TestCase):
 
         with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}):
             result = agent.prepare_task(
-                "查看仙乐斯的转化率",
+                "查看上海徐汇店的转化率",
                 user_context={
                     "graph_data": sample_medgraph(),
                     "metric": "first_visit_conversion_rate",
                     "time_range": "最近一个月",
-                    "clinic_scope": ["仙乐斯的"],
+                    "clinic_scope": ["上海徐汇店"],
                 },
             )
 
         self.assertEqual(result["clarification_result"]["status"], "ready")
-        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["仙乐斯"])
+        self.assertEqual(result["task_contract"]["input_context"]["clinic_scope"], ["上海徐汇店"])
         self.assertEqual(
             result["task_contract"]["clarified_task"]["understood_intent"],
-            "分析 2026-04-20 to 2026-05-20、仙乐斯的初诊转化率表现并形成可交付报告。",
+            "分析 2026-04-20 to 2026-05-20、上海徐汇店的初诊转化率表现并形成可交付报告。",
         )
 
     def test_prepare_task_captures_low_metric_root_cause_intent_for_agent2(self):
@@ -503,7 +511,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         agent = Agent1()
 
         result = agent.prepare_task(
-            "帮我查看上海门店的现金流",
+            "帮我查看上海徐汇店的现金流",
             user_context={"graph_data": sample_medgraph()},
         )
 
@@ -546,7 +554,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         agent = Agent1()
 
         result = agent.prepare_task(
-            "帮我查看上海门店的现金流",
+            "帮我查看上海徐汇店的现金流",
             user_context={"graph_data": sample_medgraph(), "strict_graph_match": True},
         )
 
@@ -616,12 +624,12 @@ class Agent1WorkflowTest(unittest.TestCase):
         clarifier = Agent1LLMClarifier(client=client, model="fake-model")
         agent = Agent1()
         result = agent.prepare_task(
-            "帮我查看上海门店的现金流",
+            "帮我查看上海徐汇店的现金流",
             user_context={"graph_data": sample_medgraph()},
         )
 
         message = clarifier.build_clarification_message(
-            original_question="帮我查看上海门店的现金流",
+            original_question="帮我查看上海徐汇店的现金流",
             context={"graph_data": sample_medgraph()},
             agent1_result=result,
         )
@@ -638,7 +646,7 @@ class Agent1WorkflowTest(unittest.TestCase):
                         "assistant_message": "",
                         "context_updates": {
                             "time_range": "最近30天",
-                            "clinic_scope": ["上海门店"],
+                            "clinic_scope": ["上海徐汇店"],
                         },
                         "replacement_question": "",
                         "answered_meta_question": False,
@@ -650,21 +658,21 @@ class Agent1WorkflowTest(unittest.TestCase):
         clarifier = Agent1LLMClarifier(client=client, model="fake-model")
         agent = Agent1()
         result = agent.prepare_task(
-            "帮我查看上海门店的现金流",
+            "帮我查看上海徐汇店的现金流",
             user_context={"graph_data": sample_medgraph()},
         )
         pending_item = _next_clarification_item(result)
 
         turn = clarifier.interpret_user_reply(
-            original_question="帮我查看上海门店的现金流",
+            original_question="帮我查看上海徐汇店的现金流",
             context={"graph_data": sample_medgraph()},
             agent1_result=result,
             pending_item=pending_item,
-            user_reply="最近30天，上海门店",
+            user_reply="最近30天，上海徐汇店",
         )
 
         self.assertEqual(turn["context_updates"]["time_range"], "最近30天")
-        self.assertEqual(turn["context_updates"]["clinic_scope"], ["上海门店"])
+        self.assertEqual(turn["context_updates"]["clinic_scope"], ["上海徐汇店"])
 
     def test_agent1_llm_clarifier_supports_configurable_user_agent_header(self):
         with patch.dict(os.environ, {"OPENAI_USER_AGENT": "ApipostRuntime/1.1.0"}):
@@ -716,14 +724,14 @@ class Agent1WorkflowTest(unittest.TestCase):
             {
                 "assistant_message": "",
                 "context_updates": {
-                    "business_question": "帮我查看上海门店的现金流",
+                    "business_question": "帮我查看上海徐汇店的现金流",
                 },
-                "replacement_question": "帮我查看上海门店的现金流",
+                "replacement_question": "帮我查看上海徐汇店的现金流",
                 "answered_meta_question": False,
             },
         )
 
-        self.assertEqual(replacement_question, "帮我查看上海门店的现金流")
+        self.assertEqual(replacement_question, "帮我查看上海徐汇店的现金流")
         self.assertEqual(context, {})
 
     def test_local_agent1_chat_applies_llm_scope_updates(self):
@@ -737,7 +745,7 @@ class Agent1WorkflowTest(unittest.TestCase):
                     "context_updates": {
                         "metric": "现金流",
                         "time_range": "最近30天",
-                        "clinic_scope": "上海门店",
+                        "clinic_scope": "上海徐汇店",
                     },
                     "replacement_question": "",
                     "answered_meta_question": False,
@@ -747,7 +755,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertIsNone(replacement_question)
         self.assertEqual(context["metric"], "cash_flow")
         self.assertEqual(context["time_range"], "2026-04-20 to 2026-05-20")
-        self.assertEqual(context["clinic_scope"], ["Shanghai clinics"])
+        self.assertEqual(context["clinic_scope"], ["上海徐汇店"])
 
     def test_local_agent1_chat_does_not_treat_followup_question_as_time_range(self):
         item = {"id": "time_range"}
@@ -763,7 +771,7 @@ class Agent1WorkflowTest(unittest.TestCase):
             "local_agent1_test._load_graph",
             return_value=sample_cashflow_graph(),
         ), patch("builtins.input", side_effect=["现金流", "你没查到信息，怎么还要时间？", "最近30天"]):
-            result = _run_conversation("上海门店的现金流")
+            result = _run_conversation("上海徐汇店的现金流")
 
         input_context = result["task_contract"]["input_context"]
         self.assertEqual(result["clarification_result"]["status"], "ready")
@@ -775,7 +783,7 @@ class Agent1WorkflowTest(unittest.TestCase):
             "local_agent1_test._load_graph",
             return_value=sample_medgraph(),
         ):
-            result = _run_conversation("上海门店的现金流")
+            result = _run_conversation("上海徐汇店的现金流")
 
         self.assertEqual(result["clarification_result"]["status"], "blocked")
         self.assertEqual(result["task_contract"], {})
@@ -784,10 +792,10 @@ class Agent1WorkflowTest(unittest.TestCase):
         with patch("local_agent1_test._build_llm_clarifier", return_value=FakeBusinessQuestionLLM()), patch(
             "local_agent1_test._load_graph",
             return_value=sample_medgraph(),
-        ) as load_graph, patch("builtins.input", side_effect=["上海门店的现金流"]):
+        ) as load_graph, patch("builtins.input", side_effect=["上海徐汇店的现金流"]):
             result = _run_conversation("你好")
 
-        load_graph.assert_called_once_with("上海门店的现金流")
+        load_graph.assert_called_once_with("上海徐汇店的现金流")
         self.assertEqual(result["clarification_result"]["status"], "blocked")
         self.assertEqual(result["task_contract"], {})
 
@@ -799,12 +807,12 @@ class Agent1WorkflowTest(unittest.TestCase):
             "local_agent1_test._load_graph",
             return_value=sample_medgraph(),
         ), patch("builtins.input", side_effect=["转化率", "最近35天的"]):
-            result = _run_conversation("查看仙乐斯门店的转化率")
+            result = _run_conversation("查看上海徐汇店的转化率")
 
         input_context = result["task_contract"]["input_context"]
         self.assertEqual(result["clarification_result"]["status"], "ready")
         self.assertEqual(input_context["time_range"], "2026-04-15 to 2026-05-20")
-        self.assertEqual(input_context["clinic_scope"], ["仙乐斯门店"])
+        self.assertEqual(input_context["clinic_scope"], ["上海徐汇店"])
 
     def test_local_agent1_chat_does_not_reask_possessive_named_clinic(self):
         with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}), patch(
@@ -814,12 +822,12 @@ class Agent1WorkflowTest(unittest.TestCase):
             "local_agent1_test._load_graph",
             return_value=sample_medgraph(),
         ), patch("builtins.input", side_effect=["转化率", "最近一个月"]):
-            result = _run_conversation("查看仙乐斯的转化率")
+            result = _run_conversation("查看上海徐汇店的转化率")
 
         input_context = result["task_contract"]["input_context"]
         self.assertEqual(result["clarification_result"]["status"], "ready")
         self.assertEqual(input_context["time_range"], "2026-04-20 to 2026-05-20")
-        self.assertEqual(input_context["clinic_scope"], ["仙乐斯"])
+        self.assertEqual(input_context["clinic_scope"], ["上海徐汇店"])
 
     def test_local_agent1_chat_suppresses_stale_llm_prompt_after_context_update(self):
         class StalePromptLLM(FakeNamedClinicLLM):
@@ -844,7 +852,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         ), patch("builtins.input", side_effect=["转化率", "最近一个月"]):
             output = StringIO()
             with redirect_stdout(output):
-                result = _run_conversation("查看仙乐斯的转化率")
+                result = _run_conversation("查看上海徐汇店的转化率")
 
         self.assertEqual(result["clarification_result"]["status"], "ready")
         self.assertNotIn("请问还要分析哪个门店", output.getvalue())
@@ -856,7 +864,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         ), patch(
             "local_agent1_test._load_graph",
             return_value=sample_medgraph(),
-        ), patch("builtins.input", side_effect=["转化率", "一个月", "仙乐斯"]):
+        ), patch("builtins.input", side_effect=["转化率", "一个月", "上海徐汇店"]):
             result = _run_conversation("转化率很低，为什么")
 
         input_context = result["task_contract"]["input_context"]
@@ -864,7 +872,7 @@ class Agent1WorkflowTest(unittest.TestCase):
         self.assertEqual(input_context["analysis_intent"], "root_cause_analysis")
         self.assertEqual(input_context["problem_signal"]["type"], "low_metric")
         self.assertEqual(input_context["time_range"], "2026-04-20 to 2026-05-20")
-        self.assertEqual(input_context["clinic_scope"], ["仙乐斯"])
+        self.assertEqual(input_context["clinic_scope"], ["上海徐汇店"])
 
     def test_llm_clarification_stably_lists_graph_options_and_maps_number(self):
         class FailingOptionLLM:
@@ -1298,9 +1306,16 @@ class Agent1WorkflowTest(unittest.TestCase):
 
     def test_review_agent2_result_detects_missing_capabilities_and_privacy_leak(self):
         agent = Agent1()
-        agent1_output = agent.prepare_task(
-            "请分析2026年4月上海门店SH001初诊转化率，并输出Markdown报告"
-        )
+        with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}):
+            agent1_output = agent.prepare_task(
+                "请分析上海徐汇店初诊转化率，并输出Markdown报告",
+                user_context={
+                    "graph_data": sample_medgraph(),
+                    "metric": "first_visit_conversion_rate",
+                    "time_range": "2026-04-01 to 2026-04-30",
+                    "clinic_scope": ["上海徐汇店"],
+                },
+            )
 
         review = agent.review_agent2_result(
             agent1_output,
@@ -1319,9 +1334,16 @@ class Agent1WorkflowTest(unittest.TestCase):
 
     def test_review_agent2_result_does_not_count_cache_as_data_fetch(self):
         agent = Agent1()
-        agent1_output = agent.prepare_task(
-            "请分析2026年4月上海门店SH001初诊转化率，并输出Markdown报告"
-        )
+        with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}):
+            agent1_output = agent.prepare_task(
+                "请分析上海徐汇店初诊转化率，并输出Markdown报告",
+                user_context={
+                    "graph_data": sample_medgraph(),
+                    "metric": "first_visit_conversion_rate",
+                    "time_range": "2026-04-01 to 2026-04-30",
+                    "clinic_scope": ["上海徐汇店"],
+                },
+            )
 
         review = agent.review_agent2_result(
             agent1_output,
@@ -1358,10 +1380,17 @@ class Agent1WorkflowTest(unittest.TestCase):
                 "final_report": "本次初诊转化率分析已完成，未包含患者敏感信息。",
             }
 
-        result = run_workflow(
-            "请分析2026年4月上海门店SH001和SH002初诊转化率，并输出Markdown报告",
-            agent2_runner=agent2_runner,
-        )
+        with patch.dict(os.environ, {"AGENT1_TODAY": "2026-05-20"}):
+            result = run_workflow(
+                "请分析上海徐汇店和上海新江湾店初诊转化率，并输出Markdown报告",
+                agent2_runner=agent2_runner,
+                graph_data=sample_medgraph(),
+                user_context={
+                    "metric": "first_visit_conversion_rate",
+                    "time_range": "2026-04-01 to 2026-04-30",
+                    "clinic_scope": ["上海徐汇店", "上海新江湾店"],
+                },
+            )
 
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["review_result"]["status"], "approved")

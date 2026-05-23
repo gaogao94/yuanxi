@@ -5,34 +5,55 @@ env/
 
 # Node.js 依赖
 node_modules/
+app/web/node_modules/
 
 # 前端构建产物
 dist/
+dist-ssr/
 build/
 .vite/
 
-# 敏感配置
+# 敏感配置及环境变量
 .env
+.env.local
+.env.*.local
 
-# Python 缓存
+# Python 缓存及工具产物
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
 *.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
-# 运行时输出
+# 运行时输出及日志
 output/
+data/
 logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # IDE
 .vscode/
 .idea/
+.trae/
+
+# Agent 运行时
+.crewai/
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
 
 # 系统文件
 .DS_Store
+._*
 Thumbs.db
-
-app/web/node_modules/
-# npm 日志
-npm-debug.log*

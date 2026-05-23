@@ -5,7 +5,7 @@ import type {
   WorkflowStep,
 } from "./workflow";
 
-export type ApiChartType = "bar" | "line";
+export type ApiChartType = "bar" | "line" | "pie";
 
 export type ApiChartPayload = {
   id: string;
@@ -20,7 +20,7 @@ export type ApiChartPayload = {
   description?: string;
 };
 
-export type ApiArtifactType = "ppt" | "todo" | "report" | "file";
+export type ApiArtifactType = "ppt" | "todo" | "report" | "file" | "html_report";
 
 export type ApiArtifact = {
   id: string;
@@ -116,3 +116,68 @@ export type ReplyClarificationInput = {
   questionId: string;
   answer: string;
 };
+
+// ── SSE Stream Event Payloads ───────────────────────────────────────────
+
+export type ApiStreamEventThinking = {
+  text: string;
+  source: string;
+};
+
+export type ApiClarificationQuestion = {
+  id: string;
+  question: string;
+  type: string;
+  options: string[];
+  required: boolean;
+  source: string;
+};
+
+export type ApiStreamEventClarification = {
+  status: "needs_clarification";
+  conversation_id: string;
+  text: string;
+  clarification_questions: ApiClarificationQuestion[];
+};
+
+export type ApiChartData = {
+  type: string;
+  data: Record<string, any>[];
+};
+
+export type ApiThinkingStep = {
+  text: string;
+  source?: string;
+  chart?: ApiChartData;
+};
+
+export type ApiAttachment = {
+  id: string;
+  type: string;
+  title: string;
+  size?: string;
+  preview?: string[];
+  url?: string;
+};
+
+export type ApiStreamEventResult = {
+  status: string;
+  conversation_id: string;
+  text: string;
+  thinking: ApiThinkingStep[];
+  charts: ApiChartData[];
+  attachments: ApiAttachment[];
+  raw?: any;
+};
+
+export type ApiStreamEventError = {
+  text: string;
+};
+
+export type ApiStreamEvent =
+  | { type: "thinking"; data: ApiStreamEventThinking }
+  | { type: "clarification"; data: ApiStreamEventClarification }
+  | { type: "result"; data: ApiStreamEventResult }
+  | { type: "error"; data: ApiStreamEventError }
+  | { type: "done"; data: {} };
+

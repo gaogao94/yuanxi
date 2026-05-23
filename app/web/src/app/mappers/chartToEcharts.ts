@@ -124,6 +124,47 @@ function buildLineOption(chart: ApiChartPayload): EChartsOption {
   };
 }
 
+function buildPieOption(chart: ApiChartPayload): EChartsOption {
+  const [primarySeries] = chart.series;
+
+  const data = chart.categories.map((cat, index) => ({
+    name: cat,
+    value: primarySeries?.data[index] ?? 0,
+  }));
+
+  return {
+    animation: false,
+    tooltip: {
+      trigger: "item",
+      backgroundColor: "#ffffff",
+      borderColor: "#e5e7eb",
+      borderWidth: 1,
+      textStyle: { color: "#111827", fontSize: 12 },
+    },
+    legend: {
+      orient: "vertical",
+      left: "left",
+      textStyle: { color: "#6b7280", fontSize: 11 },
+    },
+    series: [
+      {
+        name: primarySeries?.name ?? "占比",
+        type: "pie",
+        radius: "60%",
+        data: data,
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowOffsetX: 0,
+            shadowColor: "rgba(0, 0, 0, 0.5)",
+          },
+        },
+      },
+    ],
+  };
+}
+
 export function buildChartOption(chart: ApiChartPayload): EChartsOption {
+  if (chart.type === "pie") return buildPieOption(chart);
   return chart.type === "bar" ? buildBarOption(chart) : buildLineOption(chart);
 }
